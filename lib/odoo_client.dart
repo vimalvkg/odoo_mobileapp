@@ -66,7 +66,7 @@ class OdooClient {
       }
 
       final setCookie = response.headers['set-cookie'];
-      final sessionId = _extractSessionId(setCookie);
+      final sessionId = extractSessionId(setCookie);
       if (sessionId == null) {
         return AuthResult.failure(AuthOutcome.unknown, 'No session returned by the server.');
       }
@@ -86,14 +86,33 @@ class OdooClient {
     }
   }
 
-  static String? _extractSessionId(String? setCookieHeader) {
-    if (setCookieHeader == null) return null;
-    for (final part in setCookieHeader.split(';')) {
-      final trimmed = part.trim();
-      if (trimmed.startsWith('session_id=')) {
-        return trimmed.substring('session_id='.length);
-      }
+  /// Ends the session on the server so a stolen cookie stops working after
+  /// sign out. Best effort: never throws, and callers needn't wait for it.
+  static Future<void> destroySession({required String serverUrl, required String sessionId}) async {
+    try {
+      await http
+          .post(
+            Uri.parse('$serverUrl/web/session/destroy'),
+            headers: {'Content-Type': 'application/json', 'Cookie': 'session_id=$sessionId'},
+            body: jsonEncode({'jsonrpc': '2.0', 'method': 'call', 'params': {}}),
+          )
+          .timeout(const Duration(seconds: 5));
+    } catch (_) {
+      // Offline or server down: the local session is cleared regardless.
     }
-    return null;
   }
+}
+
+/// `package:http` folds multiple Set-Cookie headers into one comma-joined
+/// string, so split on both separators before looking for `session_id`.
+String? extractSessionId(String? setCookieHeader) {
+  if (setCookieHeader == null) return null;
+  for (final part in setCookieHeader.split(RegExp('[;,]'))) {
+    final trimmed = part.trim();
+    if (trimmed.startsWith('session_id=')) {
+      final value = trimmed.substring('session_id='.length);
+      return value.isEmpty ? null : value;
+    }
+  }
+  return null;
 }

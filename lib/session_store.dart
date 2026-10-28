@@ -40,11 +40,20 @@ class SessionStore {
     await prefs.setString(_keySessionId, session.sessionId);
   }
 
+  /// Server, database and username from the last sign-in, kept after sign
+  /// out so the login form can be prefilled. Never includes the password.
+  static Future<({String serverUrl, String db, String login})?> lastLogin() async {
+    final prefs = await SharedPreferences.getInstance();
+    final serverUrl = prefs.getString(_keyServerUrl);
+    final db = prefs.getString(_keyDb);
+    final login = prefs.getString(_keyLogin);
+    if (serverUrl == null || db == null || login == null) return null;
+    return (serverUrl: serverUrl, db: db, login: login);
+  }
+
+  /// Forgets the session but keeps [lastLogin] details.
   static Future<void> clear() async {
     final prefs = await SharedPreferences.getInstance();
-    await prefs.remove(_keyServerUrl);
-    await prefs.remove(_keyDb);
-    await prefs.remove(_keyLogin);
     await prefs.remove(_keySessionId);
   }
 }

@@ -5,7 +5,10 @@ import '../session_store.dart';
 import 'webview_screen.dart';
 
 class LoginScreen extends StatefulWidget {
-  const LoginScreen({super.key});
+  /// Shown above the form, e.g. to explain why the user was signed out.
+  final String? notice;
+
+  const LoginScreen({super.key, this.notice});
 
   @override
   State<LoginScreen> createState() => _LoginScreenState();
@@ -18,7 +21,23 @@ class _LoginScreenState extends State<LoginScreen> {
   final _passwordCtrl = TextEditingController();
 
   bool _loading = false;
+  bool _obscurePassword = true;
   String? _errorText;
+
+  @override
+  void initState() {
+    super.initState();
+    _prefill();
+  }
+
+  Future<void> _prefill() async {
+    final last = await SessionStore.lastLogin();
+    if (last == null || !mounted) return;
+    // Don't overwrite anything the user started typing while prefs loaded.
+    if (_serverCtrl.text.isEmpty) _serverCtrl.text = last.serverUrl;
+    if (_dbCtrl.text.isEmpty) _dbCtrl.text = last.db;
+    if (_loginCtrl.text.isEmpty) _loginCtrl.text = last.login;
+  }
 
   @override
   void dispose() {
@@ -100,6 +119,28 @@ class _LoginScreenState extends State<LoginScreen> {
                   textAlign: TextAlign.center,
                   style: TextStyle(fontSize: 17, fontWeight: FontWeight.w500),
                 ),
+                if (widget.notice != null) ...[
+                  const SizedBox(height: 12),
+                  Container(
+                    padding: const EdgeInsets.all(10),
+                    decoration: BoxDecoration(
+                      color: Theme.of(context).colorScheme.secondaryContainer,
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Row(
+                      children: [
+                        Icon(Icons.info_outline, size: 16, color: Theme.of(context).colorScheme.onSecondaryContainer),
+                        const SizedBox(width: 6),
+                        Expanded(
+                          child: Text(
+                            widget.notice!,
+                            style: TextStyle(fontSize: 12, color: Theme.of(context).colorScheme.onSecondaryContainer),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
                 const SizedBox(height: 20),
                 TextField(
                   controller: _serverCtrl,
@@ -123,9 +164,16 @@ class _LoginScreenState extends State<LoginScreen> {
                 const SizedBox(height: 12),
                 TextField(
                   controller: _passwordCtrl,
-                  obscureText: true,
+                  obscureText: _obscurePassword,
                   textInputAction: TextInputAction.done,
-                  decoration: const InputDecoration(labelText: 'Password'),
+                  decoration: InputDecoration(
+                    labelText: 'Password',
+                    suffixIcon: IconButton(
+                      icon: Icon(_obscurePassword ? Icons.visibility_outlined : Icons.visibility_off_outlined),
+                      tooltip: _obscurePassword ? 'Show password' : 'Hide password',
+                      onPressed: () => setState(() => _obscurePassword = !_obscurePassword),
+                    ),
+                  ),
                   onSubmitted: (_) => _submit(),
                 ),
                 if (_errorText != null) ...[

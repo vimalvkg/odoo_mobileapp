@@ -4,7 +4,7 @@
 |---|---|
 | **Document** | Functional Requirements Specification |
 | **Product** | Tailorline Mobile (Odoo 19 Community mobile client) |
-| **Status** | Phase 1 (App Shell) implemented; Phase 2+ planned |
+| **Status** | Phase 1 (App Shell) and Phase 1.1 (WebView experience) implemented; Phase 2+ planned |
 | **Date** | 2026-10-28 |
 
 ## 1. Purpose
@@ -36,7 +36,17 @@ Three architectures were evaluated for replicating this:
 - Error handling: no network connection, server unreachable, invalid credentials, generic failure — each with a distinct, actionable message
 - Android native build (APK), sideloadable or installable via `flutter run`
 
-### 3.2 In scope — Phase 2 (planned, not yet built)
+### 3.2 In scope — Phase 1.1: WebView experience (implemented)
+Gaps found when using the Phase 1 shell day to day, fixed before starting native screens:
+- Android back button steps back through the portal's page history instead of closing the app
+- WhatsApp (`wa.me`, `api.whatsapp.com`, `whatsapp://`), phone, email and other-website links open in the matching app instead of failing inside the WebView — this makes the existing `whatsapp_url` buttons usable on mobile ahead of the native FR-10 screen
+- Expired or web-client logout sessions return to the native login screen (with an explanation) instead of showing Odoo's web login page inside the shell
+- Sign out ends the session on the server and clears WebView cookies
+- Login form remembers server, database and username (never the password); password show/hide toggle
+- Thin progress bar during in-app page loads; drawer shows the signed-in user, server and database, plus a Home shortcut
+- LAN-hosted Odoo servers over plain `http://` (e.g. `192.168.x.x:8069`) are allowed by the Android/iOS network policies
+
+### 3.3 In scope — Phase 2 (planned, not yet built)
 Native (non-WebView) screens for the highest-frequency staff workflows, backed by JSON API endpoints wrapping the existing portal controllers:
 - Job card list + detail + stage actions
 - Payment collection (advance/balance)
@@ -44,7 +54,7 @@ Native (non-WebView) screens for the highest-frequency staff workflows, backed b
 - Family order list + detail
 - Push notifications for order-stage changes (requires a notification backend — not yet designed)
 
-### 3.3 Out of scope
+### 3.4 Out of scope
 - Approach C (full dynamic native renderer) — not justified by current team size/timeline
 - Offline mode / local data caching — no requirement identified yet
 - iOS App Store distribution — blocked on Apple Developer Program enrollment and Mac build access (see §6)
@@ -64,10 +74,18 @@ Native (non-WebView) screens for the highest-frequency staff workflows, backed b
 | FR-9 | Native payment collection screen | Planned |
 | FR-10 | Native WhatsApp send action | Planned |
 | FR-11 | Push notification on order stage change | Planned — needs backend design |
+| FR-12 | Android back navigates WebView history; exits the app only from the first page | Done |
+| FR-13 | Links leaving the Odoo server (WhatsApp, `tel:`, `mailto:`, other sites) open in the external app; a message is shown if no app can handle them | Done |
+| FR-14 | When the WebView reaches `/web/login` (session expired or logged out from the web client), the stored session is cleared and the native login screen is shown with a notice | Done |
+| FR-15 | Sign out calls `/web/session/destroy` (best effort) and clears WebView cookies | Done |
+| FR-16 | Login screen is prefilled with the last server, database and username; password is never stored | Done |
+| FR-17 | Page-load progress is shown during in-app navigation; drawer shows user/server/database and a Home action | Done |
+| FR-18 | File upload from the WebView (camera/gallery for measurement photos, attachments) | Planned — needs Android file-chooser hook |
+| FR-19 | Download/share of PDF reports (invoices, job cards) opened from the WebView | Planned |
 
 ## 5. Non-Functional Requirements
 
-- **Security:** no credentials or tokens are stored in source control or logs; session cookie is the only persisted secret, stored via platform-secure local storage (`shared_preferences`, backed by Android's encrypted prefs / iOS Keychain-backed storage where applicable)
+- **Security:** no credentials or tokens are stored in source control or logs; session cookie is the only persisted secret, stored via platform-secure local storage (`shared_preferences`, backed by Android's encrypted prefs / iOS Keychain-backed storage where applicable). Cleartext HTTP is permitted so LAN servers work; the app defaults to `https://` for any non-LAN host, and production servers should always use HTTPS
 - **Compatibility:** must work against any Odoo 19 Community deployment with the `vm_tailor_*` addons installed, not just this business's own server
 - **Authorization:** client performs no authorization logic of its own — all ACL/`ir.rule` enforcement is delegated to the Odoo server, consistent with the web portal's existing security model
 - **Platform:** Android and iOS native apps (Flutter); no Linux/Windows/macOS desktop targets required
@@ -83,5 +101,7 @@ Native (non-WebView) screens for the highest-frequency staff workflows, backed b
 ## 7. Open Questions for Phase 2 Planning
 
 - Which workflows are highest-priority for native screens — job cards, payments, WhatsApp, or something else?
+- Phase 2 native screens need JSON endpoints in the `vm_tailor_*` addons (not in this repository) — who owns that backend work?
+- Should FR-18 (photo/file upload) and FR-19 (PDF reports) come before native screens, since they unblock existing portal workflows on phones?
 - Is push notification infrastructure (FCM/APNs + an Odoo-side trigger) in scope, or deferred further?
 - Target timeline and whether a physical Android device / Mac will be made available for proper device testing going forward
