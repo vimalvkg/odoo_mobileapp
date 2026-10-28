@@ -90,4 +90,39 @@ void main() {
     expect(groups[1].isPage, isTrue);
     expect(groups[1].title, 'Lines');
   });
+
+  test('parseFormArch applies wrapper invisibility and skips warning banners', () {
+    const arch = '''
+<form>
+  <sheet>
+    <div class="alert alert-warning" invisible="not same_vat_partner_id">
+      A partner with the same <span><field name="vat_label"/></span> already exists
+      (<field name="same_vat_partner_id"/>).
+    </div>
+    <group>
+      <group>
+        <span class="o_form_label o_td_label" invisible="is_company">
+          <field name="company_registry_label" nolabel="1"/>
+        </span>
+        <div invisible="not is_company">
+          <field name="company_registry"/>
+        </div>
+        <field name="vat" invisible="parent_id and not is_company"/>
+      </group>
+    </group>
+  </sheet>
+</form>''';
+    final form = parseFormArch(arch);
+    // Banner helpers are still read (for modifiers) but never rendered.
+    expect(form.fieldNames, containsAll(['vat_label', 'same_vat_partner_id']));
+    List<FormFieldNode> fields(List<FormNode> nodes) => [
+          for (final n in nodes)
+            if (n is FormFieldNode) n else if (n is FormGroupNode) ...fields(n.children),
+        ];
+    final byName = {for (final f in fields(form.body)) f.field.name: f.field.attrs['invisible']};
+    expect(byName.keys, ['company_registry_label', 'company_registry', 'vat']);
+    expect(byName['company_registry_label'], 'is_company');
+    expect(byName['company_registry'], 'not is_company');
+    expect(byName['vat'], 'parent_id and not is_company');
+  });
 }

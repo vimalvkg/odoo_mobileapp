@@ -66,6 +66,9 @@ class _RecordFormScreenState extends State<RecordFormScreen> {
   /// values.
   int _formVersion = 0;
 
+  /// Fields already rendered in the current build (see [_renderNodes]).
+  final Set<String> _renderedFields = {};
+
   /// Selected tab per notebook, keyed by its page titles.
   final Map<String, int> _selectedPage = {};
 
@@ -676,6 +679,9 @@ class _RecordFormScreenState extends State<RecordFormScreen> {
           if (isTitle || !_fields.containsKey(field.name)) continue;
           if (_fields[field.name]!['type'] == 'binary') continue;
           if (evalModifier(field.attrs['invisible'], env)) continue;
+          // A field Odoo lays out twice (e.g. company and person variants)
+          // is shown once.
+          if (!_renderedFields.add(field.name)) continue;
           loose.add(_fieldRow(field, env));
         case FormGroupNode(isPage: true):
           // A run of pages is a notebook: show it as tabs.
@@ -1012,7 +1018,10 @@ class _RecordFormScreenState extends State<RecordFormScreen> {
           padding: const EdgeInsets.fromLTRB(16, 8, 16, 32),
           children: [
             _header(arch, env),
-            ..._renderNodes(arch.body, env, 0),
+            ...(() {
+              _renderedFields.clear();
+              return _renderNodes(arch.body, env, 0);
+            })(),
           ],
         ),
       );

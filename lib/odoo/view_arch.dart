@@ -164,6 +164,15 @@ class FormArch {
   });
 }
 
+/// Python `or` of two optional conditions.
+String? _anyOf(String? a, String? b) {
+  final x = a?.trim() ?? '';
+  final y = b?.trim() ?? '';
+  if (x.isEmpty) return y.isEmpty ? null : y;
+  if (y.isEmpty) return x;
+  return '($x) or ($y)';
+}
+
 const _skippedFormTags = {'button', 'label', 'widget', 'chatter', 'img', 'footer', 'templates', 'script', 'i'};
 
 FormArch parseFormArch(String arch) {
@@ -202,7 +211,19 @@ FormArch parseFormArch(String arch) {
     }
   }
 
-  List<FormNode> walk(XmlElement el, bool inTitle) {
+  void collectNames(XmlElement el) {
+    for (final child in el.childElements) {
+      if (child.name.local != 'field') {
+        collectNames(child);
+      } else if (child.getAttribute('name') case final name?) {
+        fieldNames.add(name);
+      }
+    }
+  }
+
+  /// [hiddenIf] is the `invisible` condition inherited from wrapping
+  /// elements (`div`, `span`, ...), which Odoo applies to everything inside.
+  List<FormNode> walk(XmlElement el, bool inTitle, String? hiddenIf) {
     final nodes = <FormNode>[];
     for (final child in el.childElements) {
       final tag = child.name.local;
@@ -212,7 +233,10 @@ FormArch parseFormArch(String arch) {
         if (name == null) continue;
         fieldNames.add(name);
         if (!_isTrue(child.getAttribute('invisible'))) {
-          nodes.add(FormFieldNode(ArchField(name, _attrs(child)), isTitle: inTitle));
+          final attrs = _attrs(child);
+          final invisible = _anyOf(hiddenIf, attrs['invisible']);
+          if (invisible != null) attrs['invisible'] = invisible;
+          nodes.add(FormFieldNode(ArchField(name, attrs), isTitle: inTitle));
         }
         // Fields nested inside a relational field belong to its sub-view.
       } else if (_isTrue(child.getAttribute('invisible'))) {
@@ -220,11 +244,11 @@ FormArch parseFormArch(String arch) {
       } else if (tag == 'header') {
         collectHeader(child);
       } else if (tag == 'group' || tag == 'page') {
-        final kids = walk(child, inTitle);
+        final kids = walk(child, inTitle, null);
         if (kids.isNotEmpty) {
           nodes.add(FormGroupNode(
             title: child.getAttribute('string'),
-            invisible: child.getAttribute('invisible'),
+            invisible: _anyOf(hiddenIf, child.getAttribute('invisible')),
             isPage: tag == 'page',
             children: kids,
           ));
@@ -232,19 +256,28 @@ FormArch parseFormArch(String arch) {
       } else if (tag == 'separator') {
         final title = child.getAttribute('string');
         if (title != null && title.isNotEmpty) nodes.add(FormSeparatorNode(title));
+      } else if (RegExp(r'\balert\b').hasMatch(cls)) {
+        // Warning banners ("another contact has this Tax ID") mix text with
+        // helper fields that only make sense inside the banner. Not shown,
+        // but their fields are still read: modifiers elsewhere may use them.
+        collectNames(child);
       } else if (_skippedFormTags.contains(tag) ||
           cls.contains('oe_button_box') ||
           cls.contains('oe_chatter') ||
           child.getAttribute('name') == 'button_box') {
         continue;
       } else {
-        nodes.addAll(walk(child, inTitle || cls.contains('oe_title')));
+        nodes.addAll(walk(
+          child,
+          inTitle || cls.contains('oe_title'),
+          _anyOf(hiddenIf, child.getAttribute('invisible')),
+        ));
       }
     }
     return nodes;
   }
 
-  final body = walk(root, false);
+  final body = walk(root, false, null);
   return FormArch(
     buttons: buttons,
     statusBar: statusBar,
