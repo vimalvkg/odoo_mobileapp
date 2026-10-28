@@ -1,4 +1,4 @@
-name: Build Android APK
+name: Build mobile apps
 
 on:
   push:
@@ -13,7 +13,7 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  build:
+  android:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -61,3 +61,30 @@ jobs:
             --target '${{ github.sha }}' --prerelease \
             --title "Test APK (${{ github.ref_name }})" \
             --notes "Built from ${{ github.sha }}. Install on Android: allow installs from unknown sources, then open the APK."
+
+  # Proves the iOS app compiles. The IPA is unsigned, so it can't be installed
+  # on an iPhone until signing (Apple Developer account) is added.
+  ios:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: 3.47.8
+          channel: stable
+          cache: true
+
+      - run: flutter pub get
+      - run: flutter build ios --release --no-codesign
+
+      - name: Package unsigned IPA
+        run: |
+          mkdir -p Payload
+          cp -R build/ios/iphoneos/Runner.app Payload/
+          zip -qr odoo-mobile-ios-unsigned.ipa Payload
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: odoo-mobile-ios-unsigned
+          path: odoo-mobile-ios-unsigned.ipa
