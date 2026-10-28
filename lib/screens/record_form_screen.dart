@@ -5,6 +5,7 @@ import '../odoo/expr.dart';
 import '../odoo/format.dart';
 import '../odoo/rpc.dart';
 import '../odoo/view_arch.dart';
+import '../theme.dart';
 import '../widgets/error_view.dart';
 import '../widgets/many2one_picker.dart';
 import '../widgets/odoo_image.dart';
@@ -61,6 +62,9 @@ class _RecordFormScreenState extends State<RecordFormScreen> {
   /// Bumped when edits are discarded so text fields rebuild with the saved
   /// values.
   int _formVersion = 0;
+
+  /// Selected tab per notebook, keyed by its page titles.
+  final Map<String, int> _selectedPage = {};
 
   @override
   void initState() {
@@ -355,7 +359,17 @@ class _RecordFormScreenState extends State<RecordFormScreen> {
       return Wrap(
         spacing: 6,
         runSpacing: 6,
-        children: [for (final n in _relatedNames[f.name]!) Chip(label: Text(n), visualDensity: VisualDensity.compact)],
+        children: [
+          for (final n in _relatedNames[f.name]!)
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+              decoration: BoxDecoration(
+                color: colorFor(n).withValues(alpha: 0.12),
+                borderRadius: BorderRadius.circular(20),
+              ),
+              child: Text(n, style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: colorFor(n))),
+            ),
+        ],
       );
     }
     if (type == 'one2many' && value is List && value.isNotEmpty) {
@@ -392,7 +406,15 @@ class _RecordFormScreenState extends State<RecordFormScreen> {
       );
     }
     final text = formatFieldValue(value, field);
-    return Text(text.isEmpty ? '—' : text, style: text.isEmpty ? TextStyle(color: theme.colorScheme.outline) : null);
+    if (text.isEmpty) return Text('—', style: TextStyle(color: theme.colorScheme.outline));
+    return Text(
+      text,
+      style: TextStyle(
+        fontSize: 15,
+        fontWeight: type == 'monetary' ? FontWeight.w700 : FontWeight.w500,
+        color: type == 'many2one' ? theme.colorScheme.primary : null,
+      ),
+    );
   }
 
   Widget _fieldEditor(ArchField f, bool required) {
@@ -466,7 +488,9 @@ class _RecordFormScreenState extends State<RecordFormScreen> {
         }, onClear: required || value == false || value == null ? null : () => setState(() => _edits[f.name] = false));
       default:
         final numeric = type == 'integer' || type == 'float' || type == 'monetary';
-        final initial = value == null || value == false ? '' : value.toString();
+        final initial = value == null || value == false
+            ? ''
+            : (value is double && value == value.truncateToDouble() ? value.toInt().toString() : value.toString());
         return TextFormField(
           key: key,
           initialValue: initial,
@@ -508,26 +532,50 @@ class _RecordFormScreenState extends State<RecordFormScreen> {
     );
   }
 
+  /// Long text reads better full width; everything else is label | value.
+  bool _isWide(ArchField f) {
+    final type = _fields[f.name]?['type'];
+    return type == 'html' || type == 'text' || type == 'one2many' || f.attrs['nolabel'] == '1';
+  }
+
   Widget _fieldRow(ArchField f, Map<String, dynamic> env) {
-    final theme = Theme.of(context);
+    final scheme = Theme.of(context).colorScheme;
     if (_editing && !_isReadonly(f, env)) {
       return Padding(
-        padding: const EdgeInsets.symmetric(vertical: 6),
+        padding: const EdgeInsets.symmetric(vertical: 7),
         child: _fieldEditor(f, _isRequired(f, env)),
       );
     }
+    final label = Text(_label(f), style: TextStyle(fontSize: 13, color: scheme.onSurfaceVariant));
+    if (_isWide(f)) {
+      return Padding(
+        padding: const EdgeInsets.symmetric(vertical: 10),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [label, const SizedBox(height: 4), _fieldView(f)],
+        ),
+      );
+    }
     return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 6),
-      child: Column(
+      padding: const EdgeInsets.symmetric(vertical: 11),
+      child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(_label(f), style: TextStyle(fontSize: 12, color: theme.colorScheme.outline)),
-          const SizedBox(height: 2),
-          _fieldView(f),
+          Expanded(flex: 2, child: Padding(padding: const EdgeInsets.only(top: 1), child: label)),
+          const SizedBox(width: 12),
+          Expanded(flex: 3, child: _fieldView(f)),
         ],
       ),
     );
   }
+
+  /// Rows separated by hairlines, as in a settings list.
+  List<Widget> _divided(List<Widget> rows) => [
+        for (var i = 0; i < rows.length; i++) ...[
+          if (i > 0 && !_editing) const Divider(height: 1),
+          rows[i],
+        ],
+      ];
 
   List<Widget> _renderNodes(List<FormNode> nodes, Map<String, dynamic> env, int depth) {
     final theme = Theme.of(context);
@@ -540,13 +588,29 @@ class _RecordFormScreenState extends State<RecordFormScreen> {
       loose.clear();
     }
 
-    for (final node in nodes) {
+    for (var i = 0; i < nodes.length; i++) {
+      final node = nodes[i];
       switch (node) {
         case FormFieldNode(:final field, :final isTitle):
           if (isTitle || !_fields.containsKey(field.name)) continue;
           if (_fields[field.name]!['type'] == 'binary') continue;
           if (evalModifier(field.attrs['invisible'], env)) continue;
           loose.add(_fieldRow(field, env));
+        case FormGroupNode(isPage: true):
+          // A run of pages is a notebook: show it as tabs.
+          final pages = <FormGroupNode>[];
+          while (i < nodes.length && nodes[i] is FormGroupNode && (nodes[i] as FormGroupNode).isPage) {
+            final page = nodes[i] as FormGroupNode;
+            if (!evalModifier(page.invisible, env)) pages.add(page);
+            i++;
+          }
+          i--;
+          final rendered = [
+            for (final p in pages) (p.title ?? '', _renderNodes(p.children, env, depth + 1)),
+          ].where((p) => p.$2.isNotEmpty).toList();
+          if (rendered.isEmpty) continue;
+          flushLoose();
+          out.add(_notebook(rendered));
         case FormGroupNode(:final title, :final invisible, :final children):
           if (evalModifier(invisible, env)) continue;
           final kids = _renderNodes(children, env, depth + 1);
@@ -566,36 +630,107 @@ class _RecordFormScreenState extends State<RecordFormScreen> {
     return out;
   }
 
-  Widget _subheading(String title, ThemeData theme) => Padding(
-        padding: const EdgeInsets.only(top: 12, bottom: 2),
-        child: Text(title, style: theme.textTheme.titleSmall?.copyWith(color: theme.colorScheme.primary)),
-      );
-
-  Widget _section(String? title, List<Widget> children) {
-    return Card(
-      margin: const EdgeInsets.only(bottom: 12),
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
+  Widget _notebook(List<(String, List<Widget>)> pages) {
+    final key = pages.map((p) => p.$1).join('|');
+    final selected = (_selectedPage[key] ?? 0).clamp(0, pages.length - 1);
+    final scheme = Theme.of(context).colorScheme;
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 12),
+      child: Card(
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            if (title != null && title.isNotEmpty)
+            if (pages.length > 1)
+              SingleChildScrollView(
+                scrollDirection: Axis.horizontal,
+                padding: const EdgeInsets.fromLTRB(8, 8, 8, 0),
+                child: Row(
+                  children: [
+                    for (var i = 0; i < pages.length; i++)
+                      InkWell(
+                        borderRadius: BorderRadius.circular(8),
+                        onTap: () => setState(() => _selectedPage[key] = i),
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                          decoration: BoxDecoration(
+                            border: Border(
+                              bottom: BorderSide(
+                                color: i == selected ? scheme.primary : Colors.transparent,
+                                width: 2.5,
+                              ),
+                            ),
+                          ),
+                          child: Text(
+                            pages[i].$1,
+                            style: TextStyle(
+                              fontWeight: i == selected ? FontWeight.w700 : FontWeight.w500,
+                              color: i == selected ? scheme.primary : scheme.onSurfaceVariant,
+                            ),
+                          ),
+                        ),
+                      ),
+                  ],
+                ),
+              )
+            else
               Padding(
-                padding: const EdgeInsets.only(top: 4, bottom: 4),
-                child: Text(title, style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 15)),
+                padding: const EdgeInsets.fromLTRB(16, 14, 16, 0),
+                child: Text(pages.first.$1, style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 15)),
               ),
-            ...children,
+            if (pages.length > 1) const Divider(height: 1),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 4, 16, 6),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: _divided(pages[selected].$2),
+              ),
+            ),
           ],
         ),
       ),
     );
   }
 
+  Widget _subheading(String title, ThemeData theme) => Padding(
+        padding: const EdgeInsets.only(top: 14, bottom: 4),
+        child: Text(
+          title.toUpperCase(),
+          style: theme.textTheme.labelSmall?.copyWith(
+            color: theme.colorScheme.primary,
+            fontWeight: FontWeight.w700,
+            letterSpacing: 0.8,
+          ),
+        ),
+      );
+
+  Widget _section(String? title, List<Widget> children) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 12),
+      child: Card(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(16, 6, 16, 6),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              if (title != null && title.isNotEmpty)
+                Padding(
+                  padding: const EdgeInsets.only(top: 10, bottom: 4),
+                  child: Text(title, style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 15)),
+                ),
+              ..._divided(children),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// Odoo's statusbar as a row of steps: done, current, upcoming.
   Widget _statusBar(ArchField f) {
     final field = _fields[f.name];
     if (field == null) return const SizedBox.shrink();
     final value = _value(f.name);
-    final theme = Theme.of(context);
+    final scheme = Theme.of(context).colorScheme;
     final List<(Object?, String)> steps;
     if (field['type'] == 'selection') {
       final visible = f.attrs['statusbar_visible']?.split(',').map((s) => s.trim()).toSet();
@@ -609,81 +744,123 @@ class _RecordFormScreenState extends State<RecordFormScreen> {
       steps = text.isEmpty ? [] : [(value, text)];
     }
     if (steps.isEmpty) return const SizedBox.shrink();
+    final current = steps.indexWhere((s) => pyEquals(s.$1, value));
     return SingleChildScrollView(
       scrollDirection: Axis.horizontal,
-      padding: const EdgeInsets.only(bottom: 8),
       child: Row(
         children: [
-          for (final (key, label) in steps)
-            Padding(
-              padding: const EdgeInsets.only(right: 6),
-              child: Chip(
-                label: Text(label),
-                visualDensity: VisualDensity.compact,
-                backgroundColor: pyEquals(key, value) ? theme.colorScheme.primary : null,
-                labelStyle: pyEquals(key, value) ? TextStyle(color: theme.colorScheme.onPrimary) : null,
+          for (var i = 0; i < steps.length; i++) ...[
+            if (i > 0) Icon(Icons.chevron_right, size: 18, color: scheme.outlineVariant),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+              decoration: BoxDecoration(
+                color: i == current
+                    ? scheme.primary
+                    : (i < current ? scheme.primaryContainer : scheme.surfaceContainerHighest),
+                borderRadius: BorderRadius.circular(20),
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  if (i < current) ...[
+                    Icon(Icons.check, size: 14, color: scheme.onPrimaryContainer),
+                    const SizedBox(width: 4),
+                  ],
+                  Text(
+                    steps[i].$2,
+                    style: TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600,
+                      color: i == current
+                          ? scheme.onPrimary
+                          : (i < current ? scheme.onPrimaryContainer : scheme.onSurfaceVariant),
+                    ),
+                  ),
+                ],
               ),
             ),
+          ],
         ],
       ),
     );
   }
 
   Widget _header(FormArch arch, Map<String, dynamic> env) {
-    final theme = Theme.of(context);
+    final scheme = Theme.of(context).colorScheme;
     final titleFields = [
       for (final f in _visibleFields(arch.body, env))
-        if (arch.body.isNotEmpty && _isTitleField(arch.body, f.name)) f,
+        if (_isTitleField(arch.body, f.name)) f,
     ];
     final image = _imageField == null ? null : decodeOdooImage(_record[_imageField]);
-    final heading = Row(
-      children: [
-        if (image != null) ...[
-          ClipRRect(
-            borderRadius: BorderRadius.circular(8),
-            child: OdooImage(bytes: image, size: 56, fallback: const SizedBox(width: 56, height: 56)),
-          ),
-          const SizedBox(width: 12),
-        ],
-        Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              if (_editing)
-                ...[for (final f in titleFields) _fieldRow(f, env)]
-              else
-                Text(
-                  _id == null ? 'New' : (_value('display_name') ?? widget.title).toString(),
-                  style: theme.textTheme.titleLarge,
-                ),
-            ],
-          ),
-        ),
-      ],
-    );
+    final title = _id == null ? 'New ${widget.title}' : (_value('display_name') ?? widget.title).toString();
     final buttons = _editing || _id == null
         ? const <FormButton>[]
         : [for (final b in arch.buttons) if (!evalModifier(b.invisible, env)) b];
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        if (arch.statusBar != null) _statusBar(arch.statusBar!),
-        if (buttons.isNotEmpty)
-          Padding(
-            padding: const EdgeInsets.only(bottom: 8),
-            child: Wrap(
-              spacing: 8,
-              runSpacing: 4,
-              children: [
-                for (final b in buttons)
-                  b.primary
-                      ? FilledButton(onPressed: _busy ? null : () => _runButton(b), child: Text(b.label))
-                      : OutlinedButton(onPressed: _busy ? null : () => _runButton(b), child: Text(b.label)),
+
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 12),
+      child: Card(
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              if (_editing && titleFields.isNotEmpty)
+                for (final f in titleFields) _fieldRow(f, env)
+              else
+                Row(
+                  children: [
+                    if (image != null)
+                      ClipRRect(
+                        borderRadius: BorderRadius.circular(12),
+                        child: OdooImage(
+                          bytes: image,
+                          size: 56,
+                          fallback: LetterAvatar(text: title, size: 56),
+                        ),
+                      )
+                    else
+                      LetterAvatar(text: title, size: 56),
+                    const SizedBox(width: 14),
+                    Expanded(
+                      child: Text(
+                        title,
+                        style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w700, height: 1.25),
+                      ),
+                    ),
+                  ],
+                ),
+              if (arch.statusBar != null) ...[
+                const SizedBox(height: 14),
+                _statusBar(arch.statusBar!),
               ],
-            ),
+              if (buttons.isNotEmpty) ...[
+                const SizedBox(height: 14),
+                Divider(height: 1, color: scheme.outlineVariant.withValues(alpha: 0.5)),
+                const SizedBox(height: 12),
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: [
+                    for (final b in buttons)
+                      b.primary
+                          ? FilledButton(
+                              style: FilledButton.styleFrom(minimumSize: const Size(0, 40)),
+                              onPressed: _busy ? null : () => _runButton(b),
+                              child: Text(b.label),
+                            )
+                          : OutlinedButton(
+                              style: OutlinedButton.styleFrom(minimumSize: const Size(0, 40)),
+                              onPressed: _busy ? null : () => _runButton(b),
+                              child: Text(b.label),
+                            ),
+                  ],
+                ),
+              ],
+            ],
           ),
-        Padding(padding: const EdgeInsets.only(bottom: 12), child: heading),
-      ],
+        ),
+      ),
     );
   }
 
@@ -717,7 +894,7 @@ class _RecordFormScreenState extends State<RecordFormScreen> {
       body = RefreshIndicator(
         onRefresh: _editing ? () async {} : _load,
         child: ListView(
-          padding: const EdgeInsets.fromLTRB(12, 12, 12, 32),
+          padding: const EdgeInsets.fromLTRB(16, 8, 16, 32),
           children: [
             _header(arch, env),
             ..._renderNodes(arch.body, env, 0),
@@ -739,10 +916,7 @@ class _RecordFormScreenState extends State<RecordFormScreen> {
         appBar: AppBar(
           title: Text(widget.title),
           actions: [
-            if (arch != null && _editing) ...[
-              IconButton(tooltip: 'Discard', icon: const Icon(Icons.close), onPressed: _busy ? null : _discard),
-              IconButton(tooltip: 'Save', icon: const Icon(Icons.check), onPressed: _busy ? null : _save),
-            ] else if (arch != null) ...[
+            if (arch != null && !_editing) ...[
               if (arch.canEdit)
                 IconButton(
                   tooltip: 'Edit',
@@ -767,6 +941,28 @@ class _RecordFormScreenState extends State<RecordFormScreen> {
         ),
         drawer: widget.drawer,
         body: body,
+        bottomNavigationBar: arch != null && _editing
+            ? SafeArea(
+                child: Container(
+                  padding: const EdgeInsets.fromLTRB(16, 10, 16, 10),
+                  decoration: BoxDecoration(
+                    color: Theme.of(context).colorScheme.surface,
+                    border: Border(top: BorderSide(color: Theme.of(context).colorScheme.outlineVariant)),
+                  ),
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: OutlinedButton(onPressed: _busy ? null : _discard, child: const Text('Discard')),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: FilledButton(onPressed: _busy ? null : _save, child: const Text('Save')),
+                      ),
+                    ],
+                  ),
+                ),
+              )
+            : null,
       ),
     );
   }

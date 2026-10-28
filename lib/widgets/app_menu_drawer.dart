@@ -52,9 +52,22 @@ class AppMenuDrawer extends StatelessWidget {
       child: SafeArea(
         child: ListView(
           children: [
-            ListTile(
-              leading: AppIcon(app: app, serverUrl: rpc.session.serverUrl, size: 32),
-              title: Text(app.name, style: const TextStyle(fontWeight: FontWeight.w600)),
+            Container(
+              margin: const EdgeInsets.fromLTRB(12, 8, 12, 8),
+              padding: const EdgeInsets.all(14),
+              decoration: BoxDecoration(
+                color: Theme.of(context).colorScheme.primaryContainer.withValues(alpha: 0.5),
+                borderRadius: BorderRadius.circular(16),
+              ),
+              child: Row(
+                children: [
+                  AppIcon(app: app, serverUrl: rpc.session.serverUrl, size: 44),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Text(app.name, style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w700)),
+                  ),
+                ],
+              ),
             ),
             ListTile(
               leading: const Icon(Icons.apps),

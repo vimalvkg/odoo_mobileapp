@@ -2,27 +2,26 @@ import 'package:flutter/material.dart';
 
 import 'app_navigation.dart';
 import 'screens/splash_screen.dart';
+import 'theme.dart';
 
 void main() {
   runApp(const TailorlineApp());
 }
 
 class TailorlineApp extends StatelessWidget {
-  const TailorlineApp({super.key});
+  final Widget home;
+
+  const TailorlineApp({super.key, this.home = const SplashScreen()});
 
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'Tailorline',
+      title: appName,
       navigatorKey: navigatorKey,
       debugShowCheckedModeBanner: false,
-      theme: ThemeData(
-        colorScheme: ColorScheme.fromSeed(seedColor: const Color(0xFF185FA5)),
-        useMaterial3: true,
-        inputDecorationTheme: const InputDecorationTheme(border: OutlineInputBorder()),
-        cardTheme: const CardThemeData(elevation: 0.5),
-      ),
-      home: const SplashScreen(),
+      theme: buildTheme(Brightness.light),
+      darkTheme: buildTheme(Brightness.dark),
+      home: home,
     );
   }
 }

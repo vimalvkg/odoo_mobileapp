@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 
 import '../session_store.dart';
+import '../theme.dart';
+import '../widgets/brand_mark.dart';
 import 'login_screen.dart';
 import 'home_screen.dart';
 
@@ -32,22 +34,23 @@ class _SplashScreenState extends State<SplashScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      body: Center(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Container(
-              width: 56,
-              height: 56,
-              decoration: BoxDecoration(
-                color: Theme.of(context).colorScheme.primaryContainer,
-                borderRadius: BorderRadius.circular(16),
-              ),
-              child: Icon(Icons.content_cut, size: 28, color: Theme.of(context).colorScheme.primary),
-            ),
-            const SizedBox(height: 12),
-            const Text('Tailorline', style: TextStyle(fontSize: 15, fontWeight: FontWeight.w500)),
-          ],
+      body: Container(
+        decoration: BoxDecoration(
+          gradient: LinearGradient(
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+            colors: [brandColor, Color.lerp(brandColor, Colors.black, 0.35)!],
+          ),
+        ),
+        child: const Center(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              BrandMark(size: 72),
+              SizedBox(height: 16),
+              Text(appName, style: TextStyle(fontSize: 22, fontWeight: FontWeight.w700, color: Colors.white)),
+            ],
+          ),
         ),
       ),
     );

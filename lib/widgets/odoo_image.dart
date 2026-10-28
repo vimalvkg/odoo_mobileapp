@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 
 import '../odoo/menus.dart';
+import '../theme.dart';
 
 /// Decodes a base64 image, accepting a `data:` URI prefix.
 Uint8List? decodeOdooImage(dynamic value) {
@@ -49,20 +50,29 @@ class OdooImage extends StatelessWidget {
 class LetterAvatar extends StatelessWidget {
   final String text;
   final double size;
+  final bool circle;
 
-  const LetterAvatar({super.key, required this.text, required this.size});
+  const LetterAvatar({super.key, required this.text, required this.size, this.circle = false});
 
   @override
   Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
+    final color = colorFor(text);
     return Container(
       width: size,
       height: size,
       alignment: Alignment.center,
-      decoration: BoxDecoration(color: scheme.primaryContainer, borderRadius: BorderRadius.circular(size / 4)),
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [Color.lerp(color, Colors.white, 0.15)!, color],
+        ),
+        shape: circle ? BoxShape.circle : BoxShape.rectangle,
+        borderRadius: circle ? null : BorderRadius.circular(size / 4),
+      ),
       child: Text(
-        text.isEmpty ? '?' : text.characters.first.toUpperCase(),
-        style: TextStyle(fontSize: size * 0.45, fontWeight: FontWeight.w600, color: scheme.onPrimaryContainer),
+        text.trim().isEmpty ? '?' : text.trim().characters.first.toUpperCase(),
+        style: TextStyle(fontSize: size * 0.42, fontWeight: FontWeight.w600, color: Colors.white),
       ),
     );
   }

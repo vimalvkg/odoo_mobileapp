@@ -6,6 +6,7 @@ import '../odoo/rpc.dart';
 import '../session_store.dart';
 import '../widgets/error_view.dart';
 import '../widgets/odoo_image.dart';
+import '../theme.dart';
 import 'action_screen.dart';
 import 'webview_screen.dart';
 
@@ -14,14 +15,17 @@ import 'webview_screen.dart';
 class HomeScreen extends StatefulWidget {
   final Session session;
 
-  const HomeScreen({super.key, required this.session});
+  /// Injected in tests; built from [session] otherwise.
+  final OdooRpc? rpc;
+
+  const HomeScreen({super.key, required this.session, this.rpc});
 
   @override
   State<HomeScreen> createState() => _HomeScreenState();
 }
 
 class _HomeScreenState extends State<HomeScreen> {
-  late final OdooRpc _rpc = OdooRpc(widget.session);
+  late final OdooRpc _rpc = widget.rpc ?? OdooRpc(widget.session);
   List<OdooMenu>? _apps;
   Object? _error;
   String _query = '';
@@ -82,8 +86,8 @@ class _HomeScreenState extends State<HomeScreen> {
           mainAxisSize: MainAxisSize.min,
           children: [
             ListTile(
-              leading: LetterAvatar(text: _rpc.userName ?? session.login, size: 40),
-              title: Text(_rpc.userName ?? session.login),
+              leading: LetterAvatar(text: _rpc.userName ?? session.login, size: 44, circle: true),
+              title: Text(_rpc.userName ?? session.login, style: const TextStyle(fontWeight: FontWeight.w600)),
               subtitle: Text(session.login),
             ),
             ListTile(
@@ -118,37 +122,51 @@ class _HomeScreenState extends State<HomeScreen> {
 
   Widget _appGrid(List<OdooMenu> apps) {
     return GridView.builder(
-      padding: const EdgeInsets.fromLTRB(12, 4, 12, 24),
+      padding: const EdgeInsets.fromLTRB(16, 8, 16, 32),
       gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
-        maxCrossAxisExtent: 104,
+        maxCrossAxisExtent: 96,
         mainAxisExtent: 112,
-        crossAxisSpacing: 4,
+        crossAxisSpacing: 8,
+        mainAxisSpacing: 8,
       ),
       itemCount: apps.length,
       itemBuilder: (_, i) {
         final app = apps[i];
         return InkWell(
-          borderRadius: BorderRadius.circular(12),
+          borderRadius: BorderRadius.circular(16),
           onTap: () => _openMenu(app, app),
-          child: Padding(
-            padding: const EdgeInsets.all(6),
-            child: Column(
-              children: [
-                AppIcon(app: app, serverUrl: widget.session.serverUrl),
-                const SizedBox(height: 6),
-                Text(
-                  app.name,
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                  textAlign: TextAlign.center,
-                  style: const TextStyle(fontSize: 12),
+          child: Column(
+            children: [
+              const SizedBox(height: 4),
+              DecoratedBox(
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(16),
+                  boxShadow: [
+                    BoxShadow(color: Colors.black.withValues(alpha: 0.08), blurRadius: 10, offset: const Offset(0, 4)),
+                  ],
                 ),
-              ],
-            ),
+                child: AppIcon(app: app, serverUrl: widget.session.serverUrl, size: 60),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                app.name,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                textAlign: TextAlign.center,
+                style: const TextStyle(fontSize: 12, height: 1.2, fontWeight: FontWeight.w500),
+              ),
+            ],
           ),
         );
       },
     );
+  }
+
+  String get _greeting {
+    final hour = DateTime.now().hour;
+    final part = hour < 12 ? 'Good morning' : (hour < 17 ? 'Good afternoon' : 'Good evening');
+    final first = (_rpc.userName ?? '').split(' ').first;
+    return first.isEmpty ? part : '$part, $first';
   }
 
   /// Searching matches apps and every menu inside them, like Odoo's home
@@ -191,12 +209,28 @@ class _HomeScreenState extends State<HomeScreen> {
         onRetry: _retry,
       );
     } else {
+      final scheme = Theme.of(context).colorScheme;
       body = Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           Padding(
-            padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
+            padding: const EdgeInsets.fromLTRB(20, 4, 20, 0),
+            child: Text(_greeting, style: const TextStyle(fontSize: 24, fontWeight: FontWeight.w700)),
+          ),
+          if (_rpc.companyName != null)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(20, 2, 20, 0),
+              child: Text(_rpc.companyName!, style: TextStyle(fontSize: 14, color: scheme.outline)),
+            ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 16, 16, 12),
             child: TextField(
-              decoration: const InputDecoration(prefixIcon: Icon(Icons.search), hintText: 'Search apps and menus', isDense: true),
+              decoration: InputDecoration(
+                prefixIcon: const Icon(Icons.search),
+                hintText: 'Search apps and menus',
+                border: OutlineInputBorder(borderRadius: BorderRadius.circular(28), borderSide: BorderSide.none),
+                enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(28), borderSide: BorderSide.none),
+              ),
               onChanged: (q) => setState(() => _query = q.trim()),
             ),
           ),
@@ -212,13 +246,14 @@ class _HomeScreenState extends State<HomeScreen> {
 
     return Scaffold(
       appBar: AppBar(
-        title: Text(_rpc.companyName ?? 'Apps'),
+        title: const Text(appName),
         actions: [
           IconButton(
             tooltip: 'Account',
             onPressed: _showProfile,
-            icon: LetterAvatar(text: _rpc.userName ?? widget.session.login, size: 32),
+            icon: LetterAvatar(text: _rpc.userName ?? widget.session.login, size: 34, circle: true),
           ),
+          const SizedBox(width: 8),
         ],
       ),
       body: body,

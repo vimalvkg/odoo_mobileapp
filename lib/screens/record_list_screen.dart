@@ -8,7 +8,9 @@ import '../odoo/expr.dart';
 import '../odoo/format.dart';
 import '../odoo/rpc.dart';
 import '../odoo/view_arch.dart';
+import '../theme.dart';
 import '../widgets/error_view.dart';
+import '../widgets/odoo_image.dart';
 import 'record_form_screen.dart';
 import 'webview_screen.dart';
 
@@ -66,6 +68,7 @@ class _RecordListScreenState extends State<RecordListScreen> {
   bool _loadingMore = false;
   Object? _error;
   String _query = '';
+  int? _total;
 
   @override
   void initState() {
@@ -156,17 +159,24 @@ class _RecordListScreenState extends State<RecordListScreen> {
     if (views == null) return;
     final fields = {'display_name', for (final f in _cardFields) f.name}.toList();
     final limit = reset ? (_records.length > _pageSize ? _records.length : _pageSize) : _pageSize;
-    final records = await widget.rpc.searchRead(
-      widget.model,
-      domain: _domain,
-      fields: fields,
-      offset: reset ? 0 : _records.length,
-      limit: limit,
-      context: widget.recordContext,
-    );
+    final domain = _domain;
+    final (records, total) = await (
+      widget.rpc.searchRead(
+        widget.model,
+        domain: domain,
+        fields: fields,
+        offset: reset ? 0 : _records.length,
+        limit: limit,
+        context: widget.recordContext,
+      ),
+      reset
+          ? widget.rpc.callKw(widget.model, 'search_count', args: [domain], context: widget.recordContext)
+          : Future<dynamic>.value(_total),
+    ).wait;
     if (!mounted) return;
     setState(() {
       _records = reset ? records : [..._records, ...records];
+      _total = total is int ? total : null;
       _hasMore = records.length == limit;
       _error = null;
     });
@@ -206,41 +216,46 @@ class _RecordListScreenState extends State<RecordListScreen> {
     _refresh();
   }
 
-  void _showFilters() {
-    showModalBottomSheet<void>(
-      context: context,
-      showDragHandle: true,
-      isScrollControlled: true,
-      builder: (_) => StatefulBuilder(
-        builder: (sheetContext, setSheetState) => SafeArea(
-          child: ConstrainedBox(
-            constraints: BoxConstraints(maxHeight: MediaQuery.sizeOf(sheetContext).height * 0.7),
-            child: ListView(
-              shrinkWrap: true,
-              children: [
-                for (var i = 0; i < _filters.length; i++) ...[
-                  if (i > 0 && _filters[i].$1.group != _filters[i - 1].$1.group) const Divider(),
-                  CheckboxListTile(
-                    title: Text(_filters[i].$1.label),
-                    value: _activeFilters.contains(_filters[i].$1.name),
-                    onChanged: (on) {
-                      final name = _filters[i].$1.name;
-                      setSheetState(() => on == true ? _activeFilters.add(name) : _activeFilters.remove(name));
-                      _research();
-                    },
-                  ),
-                ],
-              ],
+  void _toggleFilter(String name) {
+    setState(() => _activeFilters.contains(name) ? _activeFilters.remove(name) : _activeFilters.add(name));
+    _research();
+  }
+
+  Widget _filterChips() {
+    return SizedBox(
+      height: 44,
+      child: ListView(
+        scrollDirection: Axis.horizontal,
+        padding: const EdgeInsets.symmetric(horizontal: 16),
+        children: [
+          for (final (f, _) in _filters)
+            Padding(
+              padding: const EdgeInsets.only(right: 8),
+              child: FilterChip(
+                label: Text(f.label),
+                selected: _activeFilters.contains(f.name),
+                showCheckmark: false,
+                visualDensity: VisualDensity.compact,
+                onSelected: (_) => _toggleFilter(f.name),
+              ),
             ),
-          ),
-        ),
+        ],
       ),
+    );
+  }
+
+  Widget _statusPill(String text, dynamic key) {
+    final (bg, fg) = statusColors(key, Theme.of(context).colorScheme);
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 3),
+      decoration: BoxDecoration(color: bg, borderRadius: BorderRadius.circular(20)),
+      child: Text(text, style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: fg)),
     );
   }
 
   Widget _card(Map<String, dynamic> record) {
     final fields = _views!.fields;
-    final theme = Theme.of(context);
+    final scheme = Theme.of(context).colorScheme;
 
     ArchField? badge;
     ArchField? amount;
@@ -253,73 +268,103 @@ class _RecordListScreenState extends State<RecordListScreen> {
       }
       if (type == 'monetary') amount = f;
     }
-    final subtitle = [
+    final details = [
       for (final f in _cardFields)
         if (f != badge && f != amount && f.name != 'name' && f.name != 'display_name')
           formatFieldValue(record[f.name], fields[f.name]!),
-    ].where((s) => s.isNotEmpty).take(3).join(' · ');
+    ].where((s) => s.isNotEmpty).toList();
+    final title = record['display_name']?.toString() ?? '';
     final badgeText = badge == null ? '' : formatFieldValue(record[badge.name], fields[badge.name]!);
     final amountText = amount == null ? '' : formatFieldValue(record[amount.name], fields[amount.name]!);
 
-    return Card(
-      margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-      child: InkWell(
-        borderRadius: BorderRadius.circular(12),
-        onTap: record['id'] is int ? () => _openRecord(record['id'] as int) : null,
-        child: Padding(
-          padding: const EdgeInsets.all(12),
-          child: Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      record['display_name']?.toString() ?? '',
-                      style: const TextStyle(fontWeight: FontWeight.w600),
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                    if (subtitle.isNotEmpty) ...[
-                      const SizedBox(height: 4),
-                      Text(
-                        subtitle,
-                        style: TextStyle(fontSize: 13, color: theme.colorScheme.outline),
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 5),
+      child: Card(
+        child: InkWell(
+          borderRadius: BorderRadius.circular(16),
+          onTap: record['id'] is int ? () => _openRecord(record['id'] as int) : null,
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(14, 14, 14, 14),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                LetterAvatar(text: title, size: 40, circle: true),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Expanded(
+                            child: Text(
+                              title,
+                              style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w600),
+                              maxLines: 2,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                          if (amountText.isNotEmpty) ...[
+                            const SizedBox(width: 8),
+                            Text(amountText, style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w700)),
+                          ],
+                        ],
                       ),
-                    ],
-                  ],
-                ),
-              ),
-              if (amountText.isNotEmpty || badgeText.isNotEmpty) ...[
-                const SizedBox(width: 8),
-                Column(
-                  crossAxisAlignment: CrossAxisAlignment.end,
-                  children: [
-                    if (amountText.isNotEmpty) Text(amountText, style: const TextStyle(fontWeight: FontWeight.w600)),
-                    if (badgeText.isNotEmpty) ...[
-                      const SizedBox(height: 4),
-                      Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                        decoration: BoxDecoration(
-                          color: theme.colorScheme.secondaryContainer,
-                          borderRadius: BorderRadius.circular(10),
+                      if (details.isNotEmpty) ...[
+                        const SizedBox(height: 3),
+                        Text(
+                          details.first,
+                          style: TextStyle(fontSize: 13, color: scheme.onSurfaceVariant),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
                         ),
-                        child: Text(
-                          badgeText,
-                          style: TextStyle(fontSize: 11, color: theme.colorScheme.onSecondaryContainer),
+                      ],
+                      if (details.length > 1 || badgeText.isNotEmpty) ...[
+                        const SizedBox(height: 8),
+                        Row(
+                          children: [
+                            Expanded(
+                              child: Text(
+                                details.skip(1).take(2).join(' · '),
+                                style: TextStyle(fontSize: 12, color: scheme.outline),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ),
+                            if (badgeText.isNotEmpty) _statusPill(badgeText, record[badge!.name]),
+                          ],
                         ),
-                      ),
+                      ],
                     ],
-                  ],
+                  ),
                 ),
               ],
-            ],
+            ),
           ),
         ),
       ),
+    );
+  }
+
+  Widget _emptyState(ColorScheme scheme) {
+    return ListView(
+      children: [
+        const SizedBox(height: 96),
+        Icon(Icons.inbox_outlined, size: 56, color: scheme.outlineVariant),
+        const SizedBox(height: 12),
+        Text(
+          _query.isNotEmpty || _activeFilters.isNotEmpty ? 'No records match' : 'No records yet',
+          textAlign: TextAlign.center,
+          style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
+        ),
+        const SizedBox(height: 4),
+        Text(
+          _query.isNotEmpty || _activeFilters.isNotEmpty ? 'Try another search or filter.' : 'Tap New to create one.',
+          textAlign: TextAlign.center,
+          style: TextStyle(color: scheme.outline),
+        ),
+      ],
     );
   }
 
@@ -332,13 +377,20 @@ class _RecordListScreenState extends State<RecordListScreen> {
     }
     if (_views == null) return const Center(child: CircularProgressIndicator());
 
-    final theme = Theme.of(context);
+    final scheme = Theme.of(context).colorScheme;
     return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         Padding(
-          padding: const EdgeInsets.fromLTRB(12, 8, 12, 4),
+          padding: const EdgeInsets.fromLTRB(16, 4, 16, 8),
           child: TextField(
-            decoration: const InputDecoration(prefixIcon: Icon(Icons.search), hintText: 'Search', isDense: true),
+            decoration: InputDecoration(
+              prefixIcon: const Icon(Icons.search),
+              hintText: 'Search ${widget.title.toLowerCase()}',
+              isDense: true,
+              border: OutlineInputBorder(borderRadius: BorderRadius.circular(28), borderSide: BorderSide.none),
+              enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(28), borderSide: BorderSide.none),
+            ),
             textInputAction: TextInputAction.search,
             onChanged: (q) {
               _debounce?.cancel();
@@ -349,33 +401,36 @@ class _RecordListScreenState extends State<RecordListScreen> {
             },
           ),
         ),
+        if (_filters.isNotEmpty) _filterChips(),
         if (widget.domainIncomplete)
           Container(
-            width: double.infinity,
-            margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-            padding: const EdgeInsets.all(8),
+            margin: const EdgeInsets.fromLTRB(16, 4, 16, 0),
+            padding: const EdgeInsets.all(10),
             decoration: BoxDecoration(
-              color: theme.colorScheme.tertiaryContainer,
-              borderRadius: BorderRadius.circular(8),
+              color: scheme.tertiaryContainer,
+              borderRadius: BorderRadius.circular(12),
             ),
             child: Text(
               "Part of this menu's filter can't be applied in the app, so it may show more records than the web version.",
-              style: TextStyle(fontSize: 12, color: theme.colorScheme.onTertiaryContainer),
+              style: TextStyle(fontSize: 12, color: scheme.onTertiaryContainer),
+            ),
+          ),
+        if (_total != null)
+          Padding(
+            padding: const EdgeInsets.fromLTRB(20, 6, 20, 2),
+            child: Text(
+              _total == 1 ? '1 record' : '${formatNumber(_total!, decimals: 0)} records',
+              style: TextStyle(fontSize: 12, color: scheme.outline, fontWeight: FontWeight.w500),
             ),
           ),
         Expanded(
           child: RefreshIndicator(
             onRefresh: _refresh,
             child: _records.isEmpty
-                ? ListView(
-                    children: [
-                      const SizedBox(height: 120),
-                      Center(child: Text('No records', style: TextStyle(color: theme.colorScheme.outline))),
-                    ],
-                  )
+                ? _emptyState(scheme)
                 : ListView.builder(
                     controller: _scroll,
-                    padding: const EdgeInsets.only(top: 4, bottom: 88),
+                    padding: const EdgeInsets.only(top: 2, bottom: 96),
                     itemCount: _records.length + (_hasMore ? 1 : 0),
                     itemBuilder: (_, i) => i < _records.length
                         ? _card(_records[i])
@@ -397,20 +452,10 @@ class _RecordListScreenState extends State<RecordListScreen> {
       appBar: AppBar(
         title: Text(widget.title),
         actions: [
-          if (_filters.isNotEmpty)
-            IconButton(
-              tooltip: 'Filters',
-              onPressed: _showFilters,
-              icon: Badge(
-                isLabelVisible: _activeFilters.isNotEmpty,
-                label: Text('${_activeFilters.length}'),
-                child: const Icon(Icons.filter_list),
-              ),
-            ),
           if (webPath != null)
             IconButton(
               tooltip: 'Open in web',
-              icon: const Icon(Icons.language),
+              icon: const Icon(Icons.open_in_browser),
               onPressed: () => Navigator.of(context).push(MaterialPageRoute(
                 builder: (_) => WebViewScreen(session: widget.rpc.session, path: webPath, title: widget.title),
               )),
@@ -419,7 +464,11 @@ class _RecordListScreenState extends State<RecordListScreen> {
       ),
       drawer: widget.drawer,
       floatingActionButton: _views != null && _canCreate
-          ? FloatingActionButton(tooltip: 'New', onPressed: () => _openRecord(null), child: const Icon(Icons.add))
+          ? FloatingActionButton.extended(
+              onPressed: () => _openRecord(null),
+              icon: const Icon(Icons.add),
+              label: const Text('New'),
+            )
           : null,
       body: _body(),
     );
