@@ -223,8 +223,8 @@ class OdooRpc {
           'domain': domain,
           'fields': fields,
           'offset': offset,
-          if (limit != null) 'limit': limit,
-          if (order != null) 'order': order,
+          'limit': ?limit,
+          'order': ?order,
         },
         context: context);
     return [for (final r in result as List) Map<String, dynamic>.from(r as Map)];

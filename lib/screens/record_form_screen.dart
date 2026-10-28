@@ -96,7 +96,7 @@ class _RecordFormScreenState extends State<RecordFormScreen> {
       final Map<String, dynamic> record;
       final id = _id;
       if (id != null) {
-        final rows = await widget.rpc.read(widget.model, [id], [...names, if (imageField != null) imageField], context: widget.recordContext);
+        final rows = await widget.rpc.read(widget.model, [id], [...names, ?imageField], context: widget.recordContext);
         if (rows.isEmpty) throw const OdooException("This record doesn't exist or you can't access it.");
         record = rows.first;
       } else {
@@ -730,7 +730,7 @@ class _RecordFormScreenState extends State<RecordFormScreen> {
       canPop: !_editing || _edits.isEmpty,
       onPopInvokedWithResult: (didPop, _) async {
         if (didPop) return;
-        if (await _confirm('Discard your changes?', action: 'Discard') && mounted) {
+        if (await _confirm('Discard your changes?', action: 'Discard') && context.mounted) {
           _edits.clear();
           Navigator.of(context).pop();
         }
