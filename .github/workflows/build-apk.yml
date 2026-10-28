@@ -1,0 +1,63 @@
+name: Build Android APK
+
+on:
+  push:
+    branches: [main, 'claude/**']
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: apk-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: 3.47.8
+          channel: stable
+          cache: true
+
+      - run: flutter pub get
+      - run: flutter analyze
+      - run: flutter test
+
+      # Release build signed with the debug key (see android/app/build.gradle.kts):
+      # fine for sideloading on test phones, not for the Play Store.
+      - run: flutter build apk --release
+
+      - name: Name the APK after the branch
+        id: apk
+        run: |
+          slug="$(echo '${{ github.ref_name }}' | tr '/' '-')"
+          cp build/app/outputs/flutter-apk/app-release.apk "odoo-mobile-${slug}.apk"
+          echo "file=odoo-mobile-${slug}.apk" >> "$GITHUB_OUTPUT"
+          echo "tag=apk-${slug}" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: odoo-mobile-apk
+          path: ${{ steps.apk.outputs.file }}
+
+      # A pre-release per branch gives a direct download link for test phones.
+      - name: Publish to the branch's pre-release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          tag='${{ steps.apk.outputs.tag }}'
+          gh release delete "$tag" --yes --cleanup-tag 2>/dev/null || true
+          gh release create "$tag" '${{ steps.apk.outputs.file }}' \
+            --target '${{ github.sha }}' --prerelease \
+            --title "Test APK (${{ github.ref_name }})" \
+            --notes "Built from ${{ github.sha }}. Install on Android: allow installs from unknown sources, then open the APK."
