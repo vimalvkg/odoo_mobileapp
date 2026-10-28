@@ -1,6 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 
-import 'package:tailorline_mobile/odoo_client.dart';
+import 'package:odoo_mobileapp/odoo_client.dart';
 
 void main() {
   group('normalizeServerUrl', () {

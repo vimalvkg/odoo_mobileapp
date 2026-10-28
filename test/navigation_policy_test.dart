@@ -1,6 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 
-import 'package:tailorline_mobile/navigation_policy.dart';
+import 'package:odoo_mobileapp/navigation_policy.dart';
 
 void main() {
   final server = Uri.parse('https://shop.example.com');

@@ -1,6 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 
-import 'package:tailorline_mobile/odoo/expr.dart';
+import 'package:odoo_mobileapp/odoo/expr.dart';
 
 void main() {
   group('evalPy', () {

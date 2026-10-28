@@ -1,9 +1,9 @@
-# Tailorline Mobile — Functional Requirements Specification
+# ERP Mobile — Functional Requirements Specification
 
 | | |
 |---|---|
 | **Document** | Functional Requirements Specification |
-| **Product** | Tailorline Mobile — dynamic mobile client for Odoo 19 Community |
+| **Product** | ERP Mobile — dynamic mobile client for Odoo 19 Community |
 | **Status** | Phase 1 (shell), Phase 1.1 (WebView UX) and Phase 2 (dynamic native screens) implemented; device testing pending |
 | **Date** | 2026-10-28 |
 
@@ -107,5 +107,5 @@ All data access goes through the same endpoints the Odoo web client uses, so **a
 ## 10. Open Questions
 
 - Priority order for FR-29 (onchange), FR-30 (line editing), FR-31 (wizards) vs FR-18/19 (uploads, reports)?
-- App name/branding for a generic client (currently "Tailorline").
+- App name/branding: the product name is neutral ("ERP Mobile" launcher label, set in `lib/theme.dart`); the home screen shows the connected company's name. Company logo and colours to be supplied.
 - Push notifications: in scope, and with which provider (FCM/APNs)?

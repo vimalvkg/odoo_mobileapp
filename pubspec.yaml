@@ -1,5 +1,5 @@
-name: tailorline_mobile
-description: "Tailorline Mobile - dynamic mobile client for any Odoo 19 Community database."
+name: odoo_mobileapp
+description: "ERP Mobile - dynamic mobile client for any Odoo 19 Community database."
 # The following line prevents the package from being accidentally published to
 # pub.dev using `flutter pub publish`. This is preferred for private packages.
 publish_to: 'none' # Remove this line if you wish to publish to pub.dev

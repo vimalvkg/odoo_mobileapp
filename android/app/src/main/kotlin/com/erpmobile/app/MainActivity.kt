@@ -1,4 +1,4 @@
-package com.tailorline.tailorline_mobile
+package com.erpmobile.app
 
 import io.flutter.embedding.android.FlutterActivity
 

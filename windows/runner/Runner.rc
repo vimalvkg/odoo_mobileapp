@@ -89,13 +89,13 @@ BEGIN
     BEGIN
         BLOCK "040904e4"
         BEGIN
-            VALUE "CompanyName", "com.tailorline" "\0"
-            VALUE "FileDescription", "tailorline_mobile" "\0"
+            VALUE "CompanyName", "com.erpmobile" "\0"
+            VALUE "FileDescription", "odoo_mobileapp" "\0"
             VALUE "FileVersion", VERSION_AS_STRING "\0"
-            VALUE "InternalName", "tailorline_mobile" "\0"
-            VALUE "LegalCopyright", "Copyright (C) 2026 com.tailorline. All rights reserved." "\0"
-            VALUE "OriginalFilename", "tailorline_mobile.exe" "\0"
-            VALUE "ProductName", "tailorline_mobile" "\0"
+            VALUE "InternalName", "odoo_mobileapp" "\0"
+            VALUE "LegalCopyright", "Copyright (C) 2026 com.erpmobile. All rights reserved." "\0"
+            VALUE "OriginalFilename", "odoo_mobileapp.exe" "\0"
+            VALUE "ProductName", "odoo_mobileapp" "\0"
             VALUE "ProductVersion", VERSION_AS_STRING "\0"
         END
     END

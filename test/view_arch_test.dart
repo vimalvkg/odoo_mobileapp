@@ -1,6 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 
-import 'package:tailorline_mobile/odoo/view_arch.dart';
+import 'package:odoo_mobileapp/odoo/view_arch.dart';
 
 void main() {
   test('parseCardFields skips hidden and optional-hide columns', () {

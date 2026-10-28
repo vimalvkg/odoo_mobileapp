@@ -167,7 +167,7 @@ class _LoginScreenState extends State<LoginScreen> {
                   const BrandMark(size: 56),
                   const SizedBox(height: 20),
                   const Text(
-                    'Welcome to $appName',
+                    'Welcome',
                     style: TextStyle(fontSize: 26, fontWeight: FontWeight.w700, color: Colors.white),
                   ),
                   const SizedBox(height: 6),

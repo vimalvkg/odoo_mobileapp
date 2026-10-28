@@ -5,13 +5,13 @@ import 'screens/splash_screen.dart';
 import 'theme.dart';
 
 void main() {
-  runApp(const TailorlineApp());
+  runApp(const MobileApp());
 }
 
-class TailorlineApp extends StatelessWidget {
+class MobileApp extends StatelessWidget {
   final Widget home;
 
-  const TailorlineApp({super.key, this.home = const SplashScreen()});
+  const MobileApp({super.key, this.home = const SplashScreen()});
 
   @override
   Widget build(BuildContext context) {

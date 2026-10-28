@@ -42,16 +42,7 @@ class _SplashScreenState extends State<SplashScreen> {
             colors: [brandColor, Color.lerp(brandColor, Colors.black, 0.35)!],
           ),
         ),
-        child: const Center(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              BrandMark(size: 72),
-              SizedBox(height: 16),
-              Text(appName, style: TextStyle(fontSize: 22, fontWeight: FontWeight.w700, color: Colors.white)),
-            ],
-          ),
-        ),
+        child: const Center(child: BrandMark(size: 80)),
       ),
     );
   }

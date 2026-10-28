@@ -1,7 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
 
-import 'package:tailorline_mobile/odoo/format.dart';
-import 'package:tailorline_mobile/odoo/menus.dart';
+import 'package:odoo_mobileapp/odoo/format.dart';
+import 'package:odoo_mobileapp/odoo/menus.dart';
 
 void main() {
   test('parseMenus builds the app tree from load_web_menus', () {

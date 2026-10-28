@@ -6,7 +6,6 @@ import '../odoo/rpc.dart';
 import '../session_store.dart';
 import '../widgets/error_view.dart';
 import '../widgets/odoo_image.dart';
-import '../theme.dart';
 import 'action_screen.dart';
 import 'webview_screen.dart';
 
@@ -217,11 +216,13 @@ class _HomeScreenState extends State<HomeScreen> {
             padding: const EdgeInsets.fromLTRB(20, 4, 20, 0),
             child: Text(_greeting, style: const TextStyle(fontSize: 24, fontWeight: FontWeight.w700)),
           ),
-          if (_rpc.companyName != null)
-            Padding(
-              padding: const EdgeInsets.fromLTRB(20, 2, 20, 0),
-              child: Text(_rpc.companyName!, style: TextStyle(fontSize: 14, color: scheme.outline)),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(20, 2, 20, 0),
+            child: Text(
+              'What would you like to work on?',
+              style: TextStyle(fontSize: 14, color: scheme.outline),
             ),
+          ),
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 16, 16, 12),
             child: TextField(
@@ -246,7 +247,7 @@ class _HomeScreenState extends State<HomeScreen> {
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text(appName),
+        title: Text(_rpc.companyName ?? ''),
         actions: [
           IconButton(
             tooltip: 'Account',

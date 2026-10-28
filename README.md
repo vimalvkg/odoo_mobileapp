@@ -1,4 +1,4 @@
-# Tailorline Mobile
+# ERP Mobile
 
 Dynamic mobile client for any Odoo 19 Community database. Sign in with
 server, database, username and password; the app reads the database's
@@ -6,7 +6,7 @@ installed apps, menus and views and renders them as native screens (app grid,
 lists, forms), like the Odoo Enterprise mobile app. Anything not rendered
 natively opens in Odoo's web client inside the app.
 
-See [Tailorline_Mobile_FRS.md](Tailorline_Mobile_FRS.md) for requirements,
+See [Mobile_App_FRS.md](Mobile_App_FRS.md) for requirements,
 scope and status.
 
 ## Layout

@@ -1,6 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 
-import 'package:tailorline_mobile/odoo/domain.dart';
+import 'package:odoo_mobileapp/odoo/domain.dart';
 
 void main() {
   final a = ['a', '=', 1];

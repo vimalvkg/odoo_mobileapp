@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 
-const appName = 'Tailorline';
+const appName = 'ERP Mobile';
 
 /// Odoo's brand purple, so the app feels at home next to the web client.
 const brandColor = Color(0xFF714B67);
