@@ -1,21 +1,25 @@
-import 'dart:async';
-
 import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:webview_flutter/webview_flutter.dart';
 
+import '../app_navigation.dart';
 import '../navigation_policy.dart';
-import '../odoo_client.dart';
 import '../session_store.dart';
 import '../widgets/error_view.dart';
-import 'login_screen.dart';
 
+/// Odoo's own web client for whatever the native screens don't cover
+/// (dashboards, Discuss, wizards, settings, reports).
 class WebViewScreen extends StatefulWidget {
   final Session session;
 
-  const WebViewScreen({super.key, required this.session});
+  /// Server path to open, e.g. `/odoo/action-42` or `/odoo/sale.order/7`.
+  final String path;
+  final String title;
+  final Widget? drawer;
+
+  const WebViewScreen({super.key, required this.session, this.path = '/odoo', this.title = 'Web', this.drawer});
 
   @override
   State<WebViewScreen> createState() => _WebViewScreenState();
@@ -28,7 +32,6 @@ class _WebViewScreenState extends State<WebViewScreen> {
   late final Uri _server = Uri.parse(widget.session.serverUrl);
   _ScreenState _state = _ScreenState.loading;
   int _progress = 100;
-  bool _leaving = false;
 
   @override
   void initState() {
@@ -70,7 +73,7 @@ class _WebViewScreenState extends State<WebViewScreen> {
       WebViewCookie(name: 'session_id', value: widget.session.sessionId, domain: _server.host, path: '/'),
     );
 
-    await _controller.loadRequest(Uri.parse('${widget.session.serverUrl}/web'));
+    await _controller.loadRequest(Uri.parse('${widget.session.serverUrl}${widget.path}'));
   }
 
   Future<NavigationDecision> _onNavigationRequest(NavigationRequest request) async {
@@ -82,7 +85,7 @@ class _WebViewScreenState extends State<WebViewScreen> {
       case NavigationTarget.inApp:
         return NavigationDecision.navigate;
       case NavigationTarget.signedOut:
-        _endSession(notice: 'Your session has ended. Sign in again to continue.');
+        endSession(notice: sessionEndedNotice);
         return NavigationDecision.prevent;
       case NavigationTarget.external:
         _openExternally(target);
@@ -96,7 +99,7 @@ class _WebViewScreenState extends State<WebViewScreen> {
     if (url == null) return;
     final uri = Uri.tryParse(url);
     if (uri != null && uri.host == _server.host && isLoginPage(uri)) {
-      _endSession(notice: 'Your session has ended. Sign in again to continue.');
+      endSession(notice: sessionEndedNotice);
     }
   }
 
@@ -114,28 +117,15 @@ class _WebViewScreenState extends State<WebViewScreen> {
     }
   }
 
-  /// Android back walks the WebView history first and only leaves the app
-  /// from the first page, like a browser.
+  /// Android back walks the WebView history first, like a browser.
   Future<void> _onBack() async {
     if (await _controller.canGoBack()) {
       await _controller.goBack();
+    } else if (mounted && Navigator.of(context).canPop()) {
+      Navigator.of(context).pop();
     } else {
       await SystemNavigator.pop();
     }
-  }
-
-  Future<void> _signOut() async {
-    unawaited(OdooClient.destroySession(serverUrl: widget.session.serverUrl, sessionId: widget.session.sessionId));
-    await _endSession();
-  }
-
-  Future<void> _endSession({String? notice}) async {
-    if (_leaving) return;
-    _leaving = true;
-    await SessionStore.clear();
-    await WebViewCookieManager().clearCookies();
-    if (!mounted) return;
-    Navigator.of(context).pushReplacement(MaterialPageRoute(builder: (_) => LoginScreen(notice: notice)));
   }
 
   @override
@@ -147,7 +137,7 @@ class _WebViewScreenState extends State<WebViewScreen> {
       },
       child: Scaffold(
         appBar: AppBar(
-          title: const Text('Tailorline'),
+          title: Text(widget.title),
           actions: [
             IconButton(icon: const Icon(Icons.refresh), tooltip: 'Reload', onPressed: _start),
           ],
@@ -158,50 +148,7 @@ class _WebViewScreenState extends State<WebViewScreen> {
                 )
               : null,
         ),
-        drawer: Drawer(
-          child: SafeArea(
-            child: ListView(
-              children: [
-                DrawerHeader(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    mainAxisAlignment: MainAxisAlignment.end,
-                    children: [
-                      const Text('Tailorline', style: TextStyle(fontSize: 18)),
-                      const SizedBox(height: 4),
-                      Text(widget.session.login, style: const TextStyle(fontSize: 13)),
-                      Text(
-                        '${_server.host} · ${widget.session.db}',
-                        style: TextStyle(fontSize: 12, color: Theme.of(context).colorScheme.outline),
-                      ),
-                    ],
-                  ),
-                ),
-                ListTile(
-                  leading: const Icon(Icons.home_outlined),
-                  title: const Text('Home'),
-                  onTap: () {
-                    Navigator.of(context).pop();
-                    _controller.loadRequest(Uri.parse('${widget.session.serverUrl}/web'));
-                  },
-                ),
-                ListTile(
-                  leading: const Icon(Icons.refresh),
-                  title: const Text('Reload'),
-                  onTap: () {
-                    Navigator.of(context).pop();
-                    _start();
-                  },
-                ),
-                ListTile(
-                  leading: const Icon(Icons.logout),
-                  title: const Text('Sign out'),
-                  onTap: _signOut,
-                ),
-              ],
-            ),
-          ),
-        ),
+        drawer: widget.drawer,
         body: Stack(
           children: [
             if (_state == _ScreenState.ready || _state == _ScreenState.loading)

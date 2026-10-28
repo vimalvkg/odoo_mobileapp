@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import '../odoo/rpc.dart';
+
 class ErrorView extends StatelessWidget {
   final IconData icon;
   final String title;
@@ -13,6 +15,17 @@ class ErrorView extends StatelessWidget {
     required this.message,
     required this.onRetry,
   });
+
+  factory ErrorView.fromError(Object error, {Key? key, required VoidCallback onRetry}) {
+    final network = error is OdooException && error.isNetwork;
+    return ErrorView(
+      key: key,
+      icon: network ? Icons.cloud_off : Icons.error_outline,
+      title: network ? 'Connection problem' : "Couldn't load this page",
+      message: error is OdooException ? error.message : 'Something went wrong. Try again.',
+      onRetry: onRetry,
+    );
+  }
 
   @override
   Widget build(BuildContext context) {

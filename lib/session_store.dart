@@ -4,7 +4,8 @@ class Session {
   final String serverUrl;
   final String db;
   final String login;
-  final String sessionId;
+  /// Odoo can rotate the session id; [OdooRpc] updates it in place.
+  String sessionId;
 
   Session({
     required this.serverUrl,

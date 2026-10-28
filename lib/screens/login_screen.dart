@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../odoo_client.dart';
 import '../session_store.dart';
-import 'webview_screen.dart';
+import 'home_screen.dart';
 
 class LoginScreen extends StatefulWidget {
   /// Shown above the form, e.g. to explain why the user was signed out.
@@ -48,6 +48,41 @@ class _LoginScreenState extends State<LoginScreen> {
     super.dispose();
   }
 
+  /// Fills the database field from the server's list, when the server
+  /// allows listing (`list_db`); otherwise the user types it.
+  Future<void> _pickDatabase() async {
+    final server = _serverCtrl.text.trim();
+    if (server.isEmpty) {
+      setState(() => _errorText = 'Enter the server first.');
+      return;
+    }
+    setState(() => _errorText = null);
+    final databases = await OdooClient.listDatabases(normalizeServerUrl(server));
+    if (!mounted) return;
+    if (databases == null || databases.isEmpty) {
+      setState(() => _errorText = "This server doesn't list its databases. Type the name.");
+      return;
+    }
+    if (databases.length == 1) {
+      _dbCtrl.text = databases.first;
+      return;
+    }
+    final picked = await showModalBottomSheet<String>(
+      context: context,
+      showDragHandle: true,
+      builder: (sheetContext) => SafeArea(
+        child: ListView(
+          shrinkWrap: true,
+          children: [
+            for (final db in databases)
+              ListTile(title: Text(db), onTap: () => Navigator.of(sheetContext).pop(db)),
+          ],
+        ),
+      ),
+    );
+    if (picked != null) _dbCtrl.text = picked;
+  }
+
   Future<void> _submit() async {
     final server = _serverCtrl.text.trim();
     final db = _dbCtrl.text.trim();
@@ -87,7 +122,7 @@ class _LoginScreenState extends State<LoginScreen> {
 
     if (!mounted) return;
     Navigator.of(context).pushReplacement(
-      MaterialPageRoute(builder: (_) => WebViewScreen(session: session)),
+      MaterialPageRoute(builder: (_) => HomeScreen(session: session)),
     );
   }
 
@@ -115,7 +150,7 @@ class _LoginScreenState extends State<LoginScreen> {
                 ),
                 const SizedBox(height: 16),
                 const Text(
-                  'Sign in to Tailorline',
+                  'Sign in to Odoo',
                   textAlign: TextAlign.center,
                   style: TextStyle(fontSize: 17, fontWeight: FontWeight.w500),
                 ),
@@ -152,7 +187,14 @@ class _LoginScreenState extends State<LoginScreen> {
                 TextField(
                   controller: _dbCtrl,
                   textInputAction: TextInputAction.next,
-                  decoration: const InputDecoration(labelText: 'Database', hintText: 'tailer19'),
+                  decoration: InputDecoration(
+                    labelText: 'Database',
+                    suffixIcon: IconButton(
+                      icon: const Icon(Icons.storage_outlined),
+                      tooltip: 'Choose from server',
+                      onPressed: _loading ? null : _pickDatabase,
+                    ),
+                  ),
                 ),
                 const SizedBox(height: 12),
                 TextField(

@@ -86,6 +86,24 @@ class OdooClient {
     }
   }
 
+  /// Databases on the server, or null when it doesn't allow listing them.
+  static Future<List<String>?> listDatabases(String serverUrl) async {
+    try {
+      final response = await http
+          .post(
+            Uri.parse('$serverUrl/web/database/list'),
+            headers: {'Content-Type': 'application/json'},
+            body: jsonEncode({'jsonrpc': '2.0', 'method': 'call', 'params': {}}),
+          )
+          .timeout(const Duration(seconds: 10));
+      if (response.statusCode != 200) return null;
+      final result = (jsonDecode(response.body) as Map<String, dynamic>)['result'];
+      return result is List ? [for (final db in result) db.toString()] : null;
+    } catch (_) {
+      return null;
+    }
+  }
+
   /// Ends the session on the server so a stolen cookie stops working after
   /// sign out. Best effort: never throws, and callers needn't wait for it.
   static Future<void> destroySession({required String serverUrl, required String sessionId}) async {

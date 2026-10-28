@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../session_store.dart';
 import 'login_screen.dart';
-import 'webview_screen.dart';
+import 'home_screen.dart';
 
 class SplashScreen extends StatefulWidget {
   const SplashScreen({super.key});
@@ -24,7 +24,7 @@ class _SplashScreenState extends State<SplashScreen> {
 
     Navigator.of(context).pushReplacement(
       MaterialPageRoute(
-        builder: (_) => session == null ? const LoginScreen() : WebViewScreen(session: session),
+        builder: (_) => session == null ? const LoginScreen() : HomeScreen(session: session),
       ),
     );
   }
