@@ -58,3 +58,46 @@ class SessionStore {
     await prefs.remove(_keySessionId);
   }
 }
+
+/// Device-side preferences. Per-database values are keyed by server and
+/// database, so switching databases never mixes their branding or history.
+class AppPrefs {
+  static String _scope(String serverUrl, String db) => '$serverUrl|$db';
+
+  static Future<int?> brandColor(String serverUrl, String db) async =>
+      (await SharedPreferences.getInstance()).getInt('brand_color:${_scope(serverUrl, db)}');
+
+  static Future<void> setBrandColor(String serverUrl, String db, int? argb) async {
+    final prefs = await SharedPreferences.getInstance();
+    final key = 'brand_color:${_scope(serverUrl, db)}';
+    argb == null ? await prefs.remove(key) : await prefs.setInt(key, argb);
+  }
+
+  /// Most recent first.
+  static Future<List<int>> recentMenus(String serverUrl, String db) async {
+    final raw = (await SharedPreferences.getInstance()).getStringList('recent_menus:${_scope(serverUrl, db)}');
+    return [for (final s in raw ?? const <String>[]) ?int.tryParse(s)];
+  }
+
+  static Future<void> addRecentMenu(String serverUrl, String db, int menuId) async {
+    final recent = await recentMenus(serverUrl, db);
+    recent
+      ..remove(menuId)
+      ..insert(0, menuId);
+    await (await SharedPreferences.getInstance()).setStringList(
+      'recent_menus:${_scope(serverUrl, db)}',
+      [for (final id in recent.take(8)) '$id'],
+    );
+  }
+
+  static Future<bool> biometricEnabled() async =>
+      (await SharedPreferences.getInstance()).getBool('biometric') ?? false;
+
+  static Future<void> setBiometricEnabled(bool on) async =>
+      (await SharedPreferences.getInstance()).setBool('biometric', on);
+
+  static Future<String?> themeMode() async => (await SharedPreferences.getInstance()).getString('theme_mode');
+
+  static Future<void> setThemeMode(String mode) async =>
+      (await SharedPreferences.getInstance()).setString('theme_mode', mode);
+}

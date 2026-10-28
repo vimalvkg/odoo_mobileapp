@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import '../app_navigation.dart';
 import '../odoo/domain.dart';
@@ -10,7 +11,9 @@ import '../odoo/rpc.dart';
 import '../odoo/view_arch.dart';
 import '../theme.dart';
 import '../widgets/error_view.dart';
-import '../widgets/odoo_image.dart';
+import '../contact_actions.dart';
+import '../widgets/record_avatar.dart';
+import '../widgets/skeleton.dart';
 import 'record_form_screen.dart';
 import 'webview_screen.dart';
 
@@ -63,6 +66,12 @@ class _RecordListScreenState extends State<RecordListScreen> {
   final Set<String> _activeFilters = {};
   bool _canCreate = true;
 
+  /// Discovered from the model's fields, so every model gets what it supports.
+  String? _imageField;
+  String? _phoneField;
+  String? _emailField;
+  bool _canArchive = false;
+
   List<Map<String, dynamic>> _records = [];
   bool _hasMore = true;
   bool _loadingMore = false;
@@ -112,6 +121,10 @@ class _RecordListScreenState extends State<RecordListScreen> {
           if (_cardFieldTypes.contains(views.fields[f.name]?['type'])) f,
       ];
       _filters = filters;
+      _imageField = imageFieldOf(views.fields);
+      _phoneField = [for (final n in phoneFieldNames) if (views.fields[n]?['type'] == 'char') n].firstOrNull;
+      _emailField = [for (final n in emailFieldNames) if (views.fields[n]?['type'] == 'char') n].firstOrNull;
+      _canArchive = views.fields['active']?['type'] == 'boolean';
       _activeFilters
         ..clear()
         ..addAll([
@@ -157,7 +170,12 @@ class _RecordListScreenState extends State<RecordListScreen> {
   Future<void> _fetch({bool reset = false}) async {
     final views = _views;
     if (views == null) return;
-    final fields = {'display_name', for (final f in _cardFields) f.name}.toList();
+    final fields = {
+      'display_name',
+      for (final f in _cardFields) f.name,
+      ?_phoneField,
+      ?_emailField,
+    }.toList();
     final limit = reset ? (_records.length > _pageSize ? _records.length : _pageSize) : _pageSize;
     final domain = _domain;
     final (records, total) = await (
@@ -277,7 +295,10 @@ class _RecordListScreenState extends State<RecordListScreen> {
     final badgeText = badge == null ? '' : formatFieldValue(record[badge.name], fields[badge.name]!);
     final amountText = amount == null ? '' : formatFieldValue(record[amount.name], fields[amount.name]!);
 
-    return Padding(
+    final phone = _phoneField == null ? null : record[_phoneField];
+    final email = _emailField == null ? null : record[_emailField];
+    final hasContact = phone is String || email is String;
+    final card = Padding(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 5),
       child: Card(
         child: InkWell(
@@ -288,7 +309,13 @@ class _RecordListScreenState extends State<RecordListScreen> {
             child: Row(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                LetterAvatar(text: title, size: 40, circle: true),
+                RecordAvatar(
+                  rpc: widget.rpc,
+                  model: widget.model,
+                  id: record['id'] as int?,
+                  imageField: _imageField,
+                  text: title,
+                ),
                 const SizedBox(width: 12),
                 Expanded(
                   child: Column(
@@ -345,6 +372,83 @@ class _RecordListScreenState extends State<RecordListScreen> {
         ),
       ),
     );
+    final id = record['id'];
+    if (id is! int || (!hasContact && !_canArchive)) return card;
+    return Dismissible(
+      key: ValueKey('record-$id'),
+      direction: hasContact && _canArchive
+          ? DismissDirection.horizontal
+          : (hasContact ? DismissDirection.startToEnd : DismissDirection.endToStart),
+      // With a single direction Flutter only shows [background].
+      background: hasContact
+          ? _swipeBackground(Icons.call_outlined, 'Contact', scheme.primary, Alignment.centerLeft)
+          : _swipeBackground(Icons.archive_outlined, 'Archive', scheme.error, Alignment.centerRight),
+      secondaryBackground: hasContact && _canArchive
+          ? _swipeBackground(Icons.archive_outlined, 'Archive', scheme.error, Alignment.centerRight)
+          : null,
+      confirmDismiss: (direction) async {
+        HapticFeedback.mediumImpact();
+        if (direction == DismissDirection.startToEnd) {
+          showContactSheet(
+            context,
+            title: title,
+            phone: phone is String ? phone : null,
+            email: email is String ? email : null,
+          );
+          return false;
+        }
+        return _archive(record);
+      },
+      child: card,
+    );
+  }
+
+  Widget _swipeBackground(IconData icon, String label, Color color, Alignment alignment) {
+    return Container(
+      margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 5),
+      padding: const EdgeInsets.symmetric(horizontal: 24),
+      alignment: alignment,
+      decoration: BoxDecoration(color: color.withValues(alpha: 0.14), borderRadius: BorderRadius.circular(16)),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, color: color),
+          const SizedBox(width: 8),
+          Text(label, style: TextStyle(color: color, fontWeight: FontWeight.w600)),
+        ],
+      ),
+    );
+  }
+
+  /// Archives through the model's own `action_archive`, with undo.
+  Future<bool> _archive(Map<String, dynamic> record) async {
+    final id = record['id'] as int;
+    try {
+      await widget.rpc.callKw(widget.model, 'action_archive', args: [[id]], context: widget.recordContext);
+    } catch (e) {
+      if (mounted) handleRpcError(context, e);
+      return false;
+    }
+    if (!mounted) return true;
+    setState(() {
+      _records = [for (final r in _records) if (r['id'] != id) r];
+      if (_total != null) _total = _total! - 1;
+    });
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+      content: Text('Archived ${record['display_name'] ?? ''}'),
+      action: SnackBarAction(
+        label: 'Undo',
+        onPressed: () async {
+          try {
+            await widget.rpc.callKw(widget.model, 'action_unarchive', args: [[id]], context: widget.recordContext);
+            _refresh();
+          } catch (e) {
+            if (mounted) handleRpcError(context, e);
+          }
+        },
+      ),
+    ));
+    return true;
   }
 
   Widget _emptyState(ColorScheme scheme) {
@@ -375,7 +479,7 @@ class _RecordListScreenState extends State<RecordListScreen> {
         _views == null ? _init() : _refresh();
       });
     }
-    if (_views == null) return const Center(child: CircularProgressIndicator());
+    if (_views == null) return const SkeletonCards();
 
     final scheme = Theme.of(context).colorScheme;
     return Column(

@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import '../app_navigation.dart';
+import '../contact_actions.dart';
 import '../odoo/expr.dart';
 import '../odoo/format.dart';
 import '../odoo/rpc.dart';
@@ -9,6 +11,7 @@ import '../theme.dart';
 import '../widgets/error_view.dart';
 import '../widgets/many2one_picker.dart';
 import '../widgets/odoo_image.dart';
+import '../widgets/skeleton.dart';
 import 'record_list_screen.dart';
 import 'webview_screen.dart';
 
@@ -261,6 +264,7 @@ class _RecordFormScreenState extends State<RecordFormScreen> {
       _edits.clear();
       _editing = false;
       _formVersion++;
+      HapticFeedback.mediumImpact();
       await _load();
     } catch (e) {
       if (mounted) handleRpcError(context, e);
@@ -407,12 +411,89 @@ class _RecordFormScreenState extends State<RecordFormScreen> {
     }
     final text = formatFieldValue(value, field);
     if (text.isEmpty) return Text('—', style: TextStyle(color: theme.colorScheme.outline));
-    return Text(
+    final label = Text(
       text,
       style: TextStyle(
         fontSize: 15,
         fontWeight: type == 'monetary' ? FontWeight.w700 : FontWeight.w500,
         color: type == 'many2one' ? theme.colorScheme.primary : null,
+      ),
+    );
+    final kind = type == 'char' ? contactKindOf(f.name, f.widget) : null;
+    if (kind == null) return label;
+    return Row(
+      children: [
+        Expanded(child: label),
+        ContactButtons(kind: kind, value: text),
+      ],
+    );
+  }
+
+  /// First visible phone/email value, for the header's quick actions.
+  String? _contactValue(Iterable<ArchField> visible, ContactKind kind) {
+    for (final f in visible) {
+      if (_fields[f.name]?['type'] != 'char' || contactKindOf(f.name, f.widget) != kind) continue;
+      final v = _value(f.name);
+      if (v is String && v.trim().isNotEmpty) return v.trim();
+    }
+    return null;
+  }
+
+  /// The record's own address, when its model has address fields.
+  String? get _address {
+    String part(String name) {
+      final v = _record[name];
+      if (v is String) return v.trim();
+      if (v is List && v.length > 1) return v[1].toString();
+      return '';
+    }
+
+    if (!_fields.containsKey('street') && !_fields.containsKey('city')) return null;
+    final parts = [for (final n in const ['street', 'street2', 'city', 'state_id', 'zip', 'country_id']) part(n)]
+        .where((p) => p.isNotEmpty)
+        .toList();
+    return parts.isEmpty ? null : parts.join(', ');
+  }
+
+  Widget _quickActions(Iterable<ArchField> visible) {
+    final phone = _contactValue(visible, ContactKind.phone);
+    final email = _contactValue(visible, ContactKind.email);
+    final address = _address;
+    final actions = [
+      if (phone != null) ...[
+        (Icons.call_outlined, 'Call', () => callPhone(context, phone)),
+        (Icons.chat_outlined, 'WhatsApp', () => whatsApp(context, phone)),
+      ],
+      if (email != null) (Icons.mail_outline, 'Email', () => sendEmail(context, email)),
+      if (address != null) (Icons.map_outlined, 'Map', () => openMap(context, address)),
+    ];
+    if (actions.isEmpty) return const SizedBox.shrink();
+    final scheme = Theme.of(context).colorScheme;
+    return Padding(
+      padding: const EdgeInsets.only(top: 14),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+        children: [
+          for (final (icon, label, onTap) in actions)
+            InkWell(
+              borderRadius: BorderRadius.circular(12),
+              onTap: onTap,
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                child: Column(
+                  children: [
+                    CircleAvatar(
+                      radius: 20,
+                      backgroundColor: scheme.primaryContainer,
+                      child: Icon(icon, size: 20, color: scheme.onPrimaryContainer),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(label, style: TextStyle(fontSize: 12, color: scheme.onSurfaceVariant)),
+                  ],
+                ),
+              ),
+            ),
+        ],
       ),
     );
   }
@@ -830,6 +911,7 @@ class _RecordFormScreenState extends State<RecordFormScreen> {
                     ),
                   ],
                 ),
+              if (!_editing && _id != null) _quickActions(_visibleFields(arch.body, env)),
               if (arch.statusBar != null) ...[
                 const SizedBox(height: 14),
                 _statusBar(arch.statusBar!),
@@ -888,7 +970,40 @@ class _RecordFormScreenState extends State<RecordFormScreen> {
         _load();
       });
     } else if (arch == null) {
-      body = const Center(child: CircularProgressIndicator());
+      body = ListView(
+        padding: const EdgeInsets.all(16),
+        physics: const NeverScrollableScrollPhysics(),
+        children: const [
+          Card(
+            child: Padding(
+              padding: EdgeInsets.all(16),
+              child: Row(
+                children: [
+                  Skeleton(width: 56, height: 56, radius: 14),
+                  SizedBox(width: 14),
+                  Expanded(child: Skeleton(height: 20)),
+                ],
+              ),
+            ),
+          ),
+          SizedBox(height: 12),
+          Card(
+            child: Padding(
+              padding: EdgeInsets.all(16),
+              child: Column(
+                children: [
+                  _SkeletonRow(),
+                  _SkeletonRow(),
+                  _SkeletonRow(),
+                  _SkeletonRow(),
+                  _SkeletonRow(),
+                  _SkeletonRow(),
+                ],
+              ),
+            ),
+          ),
+        ],
+      );
     } else {
       final env = _env;
       body = RefreshIndicator(
@@ -966,4 +1081,20 @@ class _RecordFormScreenState extends State<RecordFormScreen> {
       ),
     );
   }
+}
+
+class _SkeletonRow extends StatelessWidget {
+  const _SkeletonRow();
+
+  @override
+  Widget build(BuildContext context) => const Padding(
+        padding: EdgeInsets.only(bottom: 18),
+        child: Row(
+          children: [
+            Expanded(flex: 2, child: Skeleton(height: 12)),
+            SizedBox(width: 24),
+            Expanded(flex: 3, child: Skeleton(height: 14)),
+          ],
+        ),
+      );
 }

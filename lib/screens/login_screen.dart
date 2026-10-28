@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
 import '../odoo_client.dart';
@@ -26,10 +28,38 @@ class _LoginScreenState extends State<LoginScreen> {
   bool _obscurePassword = true;
   String? _errorText;
 
+  /// The database's company logo, once server and database are filled in.
+  String? _logoUrl;
+  Timer? _brandingDebounce;
+
   @override
   void initState() {
     super.initState();
     _prefill();
+    _serverCtrl.addListener(_scheduleBranding);
+    _dbCtrl.addListener(_scheduleBranding);
+  }
+
+  void _scheduleBranding() {
+    _brandingDebounce?.cancel();
+    _brandingDebounce = Timer(const Duration(milliseconds: 700), _updateBranding);
+  }
+
+  /// Shows the company logo (public in Odoo) and the colours remembered for
+  /// this database, before the user has even signed in.
+  Future<void> _updateBranding() async {
+    final server = _serverCtrl.text.trim();
+    final db = _dbCtrl.text.trim();
+    if (server.isEmpty || db.isEmpty) {
+      if (mounted) setState(() => _logoUrl = null);
+      brandColor.value = defaultBrandColor;
+      return;
+    }
+    final url = normalizeServerUrl(server);
+    final cached = await AppPrefs.brandColor(url, db);
+    if (!mounted) return;
+    brandColor.value = cached == null ? defaultBrandColor : Color(cached);
+    setState(() => _logoUrl = OdooClient.publicLogoUrl(url, db));
   }
 
   Future<void> _prefill() async {
@@ -43,6 +73,7 @@ class _LoginScreenState extends State<LoginScreen> {
 
   @override
   void dispose() {
+    _brandingDebounce?.cancel();
     _serverCtrl.dispose();
     _dbCtrl.dispose();
     _loginCtrl.dispose();
@@ -158,13 +189,13 @@ class _LoginScreenState extends State<LoginScreen> {
                 gradient: LinearGradient(
                   begin: Alignment.topLeft,
                   end: Alignment.bottomRight,
-                  colors: [brandColor, Color.lerp(brandColor, Colors.black, 0.35)!],
+                  colors: [brandOf(context), Color.lerp(brandOf(context), Colors.black, 0.35)!],
                 ),
               ),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  const BrandMark(size: 56),
+                  BrandMark(size: 56, logoUrl: _logoUrl),
                   const SizedBox(height: 20),
                   const Text(
                     'Welcome',

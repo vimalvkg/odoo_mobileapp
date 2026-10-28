@@ -4,6 +4,7 @@ import '../app_navigation.dart';
 import '../odoo/domain.dart';
 import '../odoo/menus.dart';
 import '../odoo/rpc.dart';
+import '../session_store.dart';
 import '../widgets/app_menu_drawer.dart';
 import '../widgets/error_view.dart';
 import 'record_form_screen.dart';
@@ -43,6 +44,10 @@ class _ActionScreenState extends State<ActionScreen> {
   @override
   void initState() {
     super.initState();
+    final menuId = widget.menuId;
+    if (menuId != null) {
+      AppPrefs.addRecentMenu(widget.rpc.session.serverUrl, widget.rpc.session.db, menuId);
+    }
     _load();
   }
 

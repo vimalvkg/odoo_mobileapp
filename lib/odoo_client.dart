@@ -86,6 +86,11 @@ class OdooClient {
     }
   }
 
+  /// Odoo serves each database's company logo without authentication, so the
+  /// login screen can show it as soon as server and database are known.
+  static String publicLogoUrl(String serverUrl, String db) =>
+      '$serverUrl/web/binary/company_logo?dbname=${Uri.encodeQueryComponent(db)}';
+
   /// Databases on the server, or null when it doesn't allow listing them.
   static Future<List<String>?> listDatabases(String serverUrl) async {
     try {

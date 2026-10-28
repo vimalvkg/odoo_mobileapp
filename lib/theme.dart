@@ -2,11 +2,33 @@ import 'package:flutter/material.dart';
 
 const appName = 'ERP Mobile';
 
-/// Odoo's brand purple, so the app feels at home next to the web client.
-const brandColor = Color(0xFF714B67);
+/// Odoo's purple; used until the signed-in company's colour is known.
+const defaultBrandColor = Color(0xFF714B67);
 
-ThemeData buildTheme(Brightness brightness) {
-  final scheme = ColorScheme.fromSeed(seedColor: brandColor, brightness: brightness);
+/// The connected company's colour (`res.company.primary_color`). The whole
+/// app re-themes when it changes.
+final brandColor = ValueNotifier<Color>(defaultBrandColor);
+
+final themeMode = ValueNotifier<ThemeMode>(ThemeMode.system);
+
+/// [brandColor] for widgets that paint it directly; also subscribes them to
+/// theme changes so they repaint when the brand changes.
+Color brandOf(BuildContext context) {
+  Theme.of(context);
+  return brandColor.value;
+}
+
+/// Parses Odoo's `#RRGGBB` colour strings.
+Color? parseHexColor(dynamic value) {
+  if (value is! String) return null;
+  final hex = value.trim().replaceFirst('#', '');
+  if (hex.length != 6) return null;
+  final rgb = int.tryParse(hex, radix: 16);
+  return rgb == null ? null : Color(0xFF000000 | rgb);
+}
+
+ThemeData buildTheme(Brightness brightness, Color seed) {
+  final scheme = ColorScheme.fromSeed(seedColor: seed, brightness: brightness);
   final dark = brightness == Brightness.dark;
   final background = dark ? scheme.surface : const Color(0xFFF5F4F7);
   final radius = BorderRadius.circular(12);

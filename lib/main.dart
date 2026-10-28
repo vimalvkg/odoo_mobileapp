@@ -15,13 +15,17 @@ class MobileApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return MaterialApp(
-      title: appName,
-      navigatorKey: navigatorKey,
-      debugShowCheckedModeBanner: false,
-      theme: buildTheme(Brightness.light),
-      darkTheme: buildTheme(Brightness.dark),
-      home: home,
+    return ListenableBuilder(
+      listenable: Listenable.merge([brandColor, themeMode]),
+      builder: (_, _) => MaterialApp(
+        title: appName,
+        navigatorKey: navigatorKey,
+        debugShowCheckedModeBanner: false,
+        theme: buildTheme(Brightness.light, brandColor.value),
+        darkTheme: buildTheme(Brightness.dark, brandColor.value),
+        themeMode: themeMode.value,
+        home: home,
+      ),
     );
   }
 }

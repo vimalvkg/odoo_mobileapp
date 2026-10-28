@@ -42,6 +42,7 @@ class OdooRpc {
 
   int? uid;
   String? userName;
+  int? companyId;
   String? companyName;
   Map<String, dynamic> userContext = {};
 
@@ -137,10 +138,36 @@ class OdooRpc {
     final companies = info['user_companies'];
     if (companies is Map && companies['current_company'] is int) {
       final current = companies['current_company'] as int;
+      companyId = current;
       userContext['allowed_company_ids'] = [current];
       final allowed = companies['allowed_companies'];
       final company = allowed is Map ? allowed['$current'] : null;
       if (company is Map) companyName = company['name']?.toString();
+    }
+  }
+
+  /// Odoo's public logo route for the signed-in company.
+  String? get companyLogoUrl =>
+      companyId == null ? null : '${session.serverUrl}/web/binary/company_logo?company=$companyId';
+
+  /// A record's image field, served by Odoo with access rights applied.
+  String imageUrl(String model, int id, String field) => '${session.serverUrl}/web/image/$model/$id/$field';
+
+  /// Headers that authenticate image requests ([imageUrl]) with the session.
+  Map<String, String> get imageHeaders => {'Cookie': 'session_id=${session.sessionId}'};
+
+  /// The company's brand colour (`primary_color`, set in Odoo's document
+  /// layout settings), or null when unset or unavailable.
+  Future<String?> loadCompanyColor() async {
+    final id = companyId;
+    if (id == null) return null;
+    try {
+      final rows = await read('res.company', [id], ['primary_color']);
+      final color = rows.isEmpty ? null : rows.first['primary_color'];
+      return color is String && color.isNotEmpty ? color : null;
+    } on OdooException catch (e) {
+      if (e.isSessionExpired) rethrow;
+      return null;
     }
   }
 

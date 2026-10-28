@@ -70,6 +70,14 @@ All data access goes through the same endpoints the Odoo web client uses, so **a
 | FR-26 | Create and delete records, honouring the view's `create`/`edit`/`delete` attributes | Done |
 | FR-27 | Run form header buttons (`type="object"`); actions/wizards they return continue in the web client | Done |
 | FR-28 | Open the same record or action in the web client from any native screen | Done |
+| FR-33 | Company branding from the connected database: public company logo on login/lock screens, `res.company.primary_color` re-themes the app (remembered per server+database) | Done |
+| FR-34 | Record photos (`avatar_128`/`image_128`) in lists, form header and profile, when the model has them | Done |
+| FR-35 | Swipe on list cards: contact (call/WhatsApp/email) when the record has phone/email fields; archive with undo when the model has `active` | Done |
+| FR-36 | Phone/email/URL fields get one-tap actions; form header quick actions (call, WhatsApp, email, map from address fields) | Done |
+| FR-37 | Bottom navigation: Apps, Activities, Discuss, Profile — Activities/Discuss only when `mail` is installed | Done |
+| FR-38 | My Activities: the user's `mail.activity` grouped overdue/today/upcoming, open the record, mark done (swipe or tap); summary card and badge | Done |
+| FR-39 | Recent menus on Home, remembered per server+database | Done |
+| FR-40 | Quick unlock with fingerprint/face/screen lock (on-device only), appearance (auto/light/dark), loading skeletons, haptics | Done |
 | FR-18 | File/photo upload from the WebView | Planned |
 | FR-19 | Download/share PDF reports | Planned |
 | FR-29 | Run onchange while editing (live computed fields/defaults) | Planned |

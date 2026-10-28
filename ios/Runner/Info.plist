@@ -33,6 +33,8 @@
 		<string>mailto</string>
 		<string>sms</string>
 	</array>
+	<key>NSFaceIDUsageDescription</key>
+	<string>Unlock the app with Face ID instead of signing in again.</string>
 	<key>NSAppTransportSecurity</key>
 	<dict>
 		<key>NSAllowsLocalNetworking</key>

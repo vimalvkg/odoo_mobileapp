@@ -6,6 +6,9 @@ class OdooMenu {
   final int? actionId;
   final String? actionModel;
 
+  /// e.g. `mail.menu_root_discuss`; identifies standard apps in any language.
+  final String? xmlid;
+
   /// `module,path/to/icon.png` or a font-awesome spec; see [iconData].
   final String? webIcon;
 
@@ -18,6 +21,7 @@ class OdooMenu {
     required this.name,
     this.actionId,
     this.actionModel,
+    this.xmlid,
     this.webIcon,
     this.iconData,
     this.children = const [],
@@ -29,6 +33,16 @@ class OdooMenu {
     if (actionId != null) return this;
     for (final child in children) {
       final found = child.firstAction;
+      if (found != null) return found;
+    }
+    return null;
+  }
+
+  /// The menu with [menuId] in this subtree, if any.
+  OdooMenu? find(int menuId) {
+    if (id == menuId) return this;
+    for (final child in children) {
+      final found = child.find(menuId);
       if (found != null) return found;
     }
     return null;
@@ -60,6 +74,7 @@ List<OdooMenu> parseMenus(dynamic raw) {
       name: m['name']?.toString() ?? '',
       actionId: action is int ? action : null,
       actionModel: text(m['actionModel']),
+      xmlid: text(m['xmlid']),
       webIcon: text(m['webIcon']),
       iconData: text(m['webIconData']),
       children: [

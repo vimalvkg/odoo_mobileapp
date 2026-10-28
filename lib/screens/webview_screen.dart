@@ -19,7 +19,20 @@ class WebViewScreen extends StatefulWidget {
   final String title;
   final Widget? drawer;
 
-  const WebViewScreen({super.key, required this.session, this.path = '/odoo', this.title = 'Web', this.drawer});
+  /// When embedded as a tab: whether the tab is showing (only then does it
+  /// handle Android back), and what back does once history is exhausted.
+  final bool active;
+  final VoidCallback? onBackAtStart;
+
+  const WebViewScreen({
+    super.key,
+    required this.session,
+    this.path = '/odoo',
+    this.title = 'Web',
+    this.drawer,
+    this.active = true,
+    this.onBackAtStart,
+  });
 
   @override
   State<WebViewScreen> createState() => _WebViewScreenState();
@@ -121,6 +134,8 @@ class _WebViewScreenState extends State<WebViewScreen> {
   Future<void> _onBack() async {
     if (await _controller.canGoBack()) {
       await _controller.goBack();
+    } else if (widget.onBackAtStart != null) {
+      widget.onBackAtStart!();
     } else if (mounted && Navigator.of(context).canPop()) {
       Navigator.of(context).pop();
     } else {
@@ -131,7 +146,7 @@ class _WebViewScreenState extends State<WebViewScreen> {
   @override
   Widget build(BuildContext context) {
     return PopScope(
-      canPop: false,
+      canPop: !widget.active,
       onPopInvokedWithResult: (didPop, _) {
         if (!didPop) _onBack();
       },
