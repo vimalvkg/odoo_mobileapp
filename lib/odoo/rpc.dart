@@ -30,7 +30,20 @@ class ModelViews {
   /// Arch XML keyed by view type (`list`, `kanban`, `form`, `search`).
   final Map<String, String> archs;
 
-  const ModelViews(this.fields, this.archs);
+  /// Field definitions of every model the views involve, e.g. the order
+  /// line model of a sale order's inline line list.
+  final Map<String, Map<String, Map<String, dynamic>>> models;
+
+  const ModelViews(this.fields, this.archs, [this.models = const {}]);
+}
+
+Map<String, Map<String, dynamic>> _fieldDefs(dynamic modelInfo) {
+  // Odoo 17+ nests the definitions under "fields"; 16 returns them directly.
+  final raw = modelInfo is Map && modelInfo['fields'] is Map ? modelInfo['fields'] as Map : modelInfo as Map? ?? {};
+  return {
+    for (final e in raw.entries)
+      if (e.value is Map) e.key.toString(): Map<String, dynamic>.from(e.value as Map),
+  };
 }
 
 /// JSON-RPC client bound to a signed-in session. Everything goes through the
@@ -209,18 +222,15 @@ class OdooRpc {
       context: context,
     );
     if (result is! Map) throw const OdooException('Unexpected response from the server.');
-    final modelInfo = (result['models'] as Map?)?[model];
-    // Odoo 17+ nests the definitions under "fields"; 16 returns them directly.
-    final rawFields = modelInfo is Map && modelInfo['fields'] is Map ? modelInfo['fields'] as Map : modelInfo as Map? ?? {};
-    final fields = <String, Map<String, dynamic>>{
-      for (final e in rawFields.entries)
-        if (e.value is Map) e.key.toString(): Map<String, dynamic>.from(e.value as Map),
+    final models = {
+      for (final e in ((result['models'] as Map?) ?? {}).entries) e.key.toString(): _fieldDefs(e.value),
     };
+    final fields = models[model] ?? {};
     final archs = <String, String>{
       for (final e in ((result['views'] as Map?) ?? {}).entries)
         if (e.value is Map && (e.value as Map)['arch'] is String) e.key.toString(): (e.value as Map)['arch'] as String,
     };
-    return ModelViews(fields, archs);
+    return ModelViews(fields, archs, models);
   }
 
   /// Runs a form header button of type `object`. Returns the action the

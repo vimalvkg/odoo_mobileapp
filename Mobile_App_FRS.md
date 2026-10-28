@@ -81,14 +81,16 @@ All data access goes through the same endpoints the Odoo web client uses, so **a
 | FR-18 | File/photo upload from the WebView | Planned |
 | FR-19 | Download/share PDF reports | Planned |
 | FR-29 | Run onchange while editing (live computed fields/defaults) | Planned |
-| FR-30 | Edit one2many lines (e.g. order lines) natively | Planned — today via *Open in web* |
+| FR-30 | Edit one2many lines natively (e.g. order lines): line cards from the field's inline list view, add/edit in a line editor built from its inline form (or list columns) with `parent.*` conditions, swipe to remove; saved as Odoo x2many commands so the server computes prices, taxes and totals | Done |
+| FR-41 | Many2many tags editable (add/remove chips); record pickers respect the field's domain | Done |
+| FR-42 | Live onchange while editing lines (unit price, taxes, subtotal shown before saving) | Planned — today computed on Save |
 | FR-31 | Native wizards (`target="new"` actions), kanban grouping, calendar | Planned — today via web client |
 | FR-32 | Push notifications (Discuss, activities) | Planned — needs server-side design |
 
 ## 6. Known limitations (current release)
 
 - **Onchange is not run** while editing, so computed fields and dependent defaults update only after saving (the server recomputes on save).
-- **One2many lines are read-only** natively; editing lines uses *Open in web*.
+- **Line prices/taxes/subtotals** are computed by Odoo when the record is saved (no live onchange yet).
 - **Modifiers and domains** use a safe Python subset. Expressions with functions such as `context_today()` or `relativedelta` can't be evaluated on the device: such modifiers are treated as false (field shown), such search filters are hidden, and an action domain that can't be evaluated is dropped with a visible notice (server-side record rules still apply).
 - **Binary fields** other than the record avatar are not loaded.
 - Web fallback URLs use Odoo 17+/19 routes (`/odoo/action-<id>`, `/odoo/<model>/<id>`).

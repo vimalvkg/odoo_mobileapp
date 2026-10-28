@@ -6,7 +6,10 @@ class ArchField {
   final String name;
   final Map<String, String> attrs;
 
-  const ArchField(this.name, this.attrs);
+  /// Inline views of a relational field (`list`, `form`, `kanban`), as XML.
+  final Map<String, String> subviews;
+
+  const ArchField(this.name, this.attrs, [this.subviews = const {}]);
 
   String? get widget => attrs['widget'];
   String? get label => attrs['string'];
@@ -102,7 +105,11 @@ class FormFieldNode extends FormNode {
   /// Inside the `oe_title` block: rendered as the record's heading.
   final bool isTitle;
 
-  const FormFieldNode(this.field, {this.isTitle = false});
+  /// Inside a `<group>`. Odoo only labels grouped fields; fields placed
+  /// directly in a page or the sheet (lines, notes) show without a label.
+  final bool inGroup;
+
+  const FormFieldNode(this.field, {this.isTitle = false, this.inGroup = true});
 }
 
 /// A `<group>` or notebook `<page>`.
@@ -223,7 +230,7 @@ FormArch parseFormArch(String arch) {
 
   /// [hiddenIf] is the `invisible` condition inherited from wrapping
   /// elements (`div`, `span`, ...), which Odoo applies to everything inside.
-  List<FormNode> walk(XmlElement el, bool inTitle, String? hiddenIf) {
+  List<FormNode> walk(XmlElement el, bool inTitle, String? hiddenIf, [bool inGroup = false]) {
     final nodes = <FormNode>[];
     for (final child in el.childElements) {
       final tag = child.name.local;
@@ -236,7 +243,12 @@ FormArch parseFormArch(String arch) {
           final attrs = _attrs(child);
           final invisible = _anyOf(hiddenIf, attrs['invisible']);
           if (invisible != null) attrs['invisible'] = invisible;
-          nodes.add(FormFieldNode(ArchField(name, attrs), isTitle: inTitle));
+          final subviews = {
+            for (final sub in child.childElements)
+              if (const {'list', 'tree', 'form', 'kanban'}.contains(sub.name.local))
+                sub.name.local == 'tree' ? 'list' : sub.name.local: sub.toXmlString(),
+          };
+          nodes.add(FormFieldNode(ArchField(name, attrs, subviews), isTitle: inTitle, inGroup: inGroup));
         }
         // Fields nested inside a relational field belong to its sub-view.
       } else if (_isTrue(child.getAttribute('invisible'))) {
@@ -244,7 +256,7 @@ FormArch parseFormArch(String arch) {
       } else if (tag == 'header') {
         collectHeader(child);
       } else if (tag == 'group' || tag == 'page') {
-        final kids = walk(child, inTitle, null);
+        final kids = walk(child, inTitle, null, tag == 'group');
         if (kids.isNotEmpty) {
           nodes.add(FormGroupNode(
             title: child.getAttribute('string'),
@@ -271,6 +283,7 @@ FormArch parseFormArch(String arch) {
           child,
           inTitle || cls.contains('oe_title'),
           _anyOf(hiddenIf, child.getAttribute('invisible')),
+          inGroup,
         ));
       }
     }
@@ -287,4 +300,32 @@ FormArch parseFormArch(String arch) {
     canEdit: !_isFalse(root.getAttribute('edit')),
     canDelete: !_isFalse(root.getAttribute('delete')),
   );
+}
+
+/// Every field of a form body, in layout order, with its own conditions.
+List<ArchField> formFields(List<FormNode> nodes) => [
+      for (final node in nodes)
+        ...switch (node) {
+          FormFieldNode(:final field) => [field],
+          FormGroupNode(:final children) => formFields(children),
+          FormSeparatorNode() => const <ArchField>[],
+        },
+    ];
+
+/// Every field a list view declares, hidden ones included (line conditions
+/// often depend on hidden columns), excluding nested sub-views.
+Set<String> archFieldNames(String arch) {
+  final names = <String>{};
+  void walk(XmlElement el) {
+    for (final child in el.childElements) {
+      if (child.name.local != 'field') {
+        walk(child);
+      } else if (child.getAttribute('name') case final name?) {
+        names.add(name);
+      }
+    }
+  }
+
+  walk(XmlDocument.parse(arch).rootElement);
+  return names;
 }

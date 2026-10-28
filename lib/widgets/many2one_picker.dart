@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 
 import '../app_navigation.dart';
+import '../odoo/domain.dart';
 import '../odoo/rpc.dart';
 
 /// Searchable record picker for a many2one field. Resolves to `[id, name]`
@@ -14,12 +15,20 @@ Future<Object?> showMany2onePicker(
   required String title,
   required bool allowClear,
   Map<String, dynamic>? recordContext,
+  List<dynamic> domain = const [],
 }) {
   return showModalBottomSheet<Object>(
     context: context,
     isScrollControlled: true,
     useSafeArea: true,
-    builder: (_) => _Many2onePicker(rpc: rpc, model: model, title: title, allowClear: allowClear, rpcContext: recordContext),
+    builder: (_) => _Many2onePicker(
+      rpc: rpc,
+      model: model,
+      title: title,
+      allowClear: allowClear,
+      rpcContext: recordContext,
+      domain: domain,
+    ),
   );
 }
 
@@ -30,7 +39,11 @@ class _Many2onePicker extends StatefulWidget {
   final bool allowClear;
   final Map<String, dynamic>? rpcContext;
 
+  /// The field's own domain (e.g. only sellable products).
+  final List<dynamic> domain;
+
   const _Many2onePicker({
+    this.domain = const [],
     required this.rpc,
     required this.model,
     required this.title,
@@ -62,7 +75,13 @@ class _Many2onePickerState extends State<_Many2onePicker> {
     try {
       final results = await widget.rpc.searchRead(
         widget.model,
-        domain: query.isEmpty ? [] : [['display_name', 'ilike', query]],
+        domain: andDomains([
+          widget.domain,
+          if (query.isNotEmpty)
+            [
+              ['display_name', 'ilike', query],
+            ],
+        ]),
         fields: ['display_name'],
         limit: 40,
         context: widget.rpcContext,

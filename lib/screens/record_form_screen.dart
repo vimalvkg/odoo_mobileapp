@@ -9,16 +9,11 @@ import '../odoo/rpc.dart';
 import '../odoo/view_arch.dart';
 import '../theme.dart';
 import '../widgets/error_view.dart';
-import '../widgets/many2one_picker.dart';
+import '../widgets/field_editor.dart';
 import '../widgets/odoo_image.dart';
 import '../widgets/skeleton.dart';
-import 'record_list_screen.dart';
+import '../widgets/x2many_lines.dart';
 import 'webview_screen.dart';
-
-/// Field types the app can edit; others are shown read-only.
-const _editableTypes = {
-  'char', 'text', 'integer', 'float', 'monetary', 'boolean', 'selection', 'date', 'datetime', 'many2one',
-};
 
 /// One record of any model, laid out from its form view: statusbar, header
 /// buttons, title, groups and notebook pages. Supports viewing, editing,
@@ -55,7 +50,12 @@ class _RecordFormScreenState extends State<RecordFormScreen> {
   FormArch? _arch;
   Map<String, dynamic> _record = {};
   final Map<String, dynamic> _edits = {};
-  Map<String, List<String>> _relatedNames = {};
+
+  /// Names of many2many ids per field (tags).
+  Map<String, Map<int, String>> _tagNames = {};
+
+  /// Editable lines per one2many field.
+  Map<String, X2ManyLines> _lines = {};
   String? _imageField;
 
   Object? _error;
@@ -82,13 +82,9 @@ class _RecordFormScreenState extends State<RecordFormScreen> {
 
   Future<void> _load() async {
     try {
-      final views = await widget.rpc.getViews(
-        widget.model,
-        [
-          [widget.formViewId ?? false, 'form'],
-        ],
-        context: widget.recordContext,
-      );
+      final views = await widget.rpc.getViews(widget.model, [
+        [widget.formViewId ?? false, 'form'],
+      ], context: widget.recordContext);
       final archXml = views.archs['form'];
       if (archXml == null) throw const OdooException('This model has no form view.');
       final arch = parseFormArch(archXml);
@@ -110,19 +106,24 @@ class _RecordFormScreenState extends State<RecordFormScreen> {
         if (rows.isEmpty) throw const OdooException("This record doesn't exist or you can't access it.");
         record = rows.first;
       } else {
-        final defaults = await widget.rpc.callKw(widget.model, 'default_get',
-            args: [names], context: widget.recordContext);
+        final defaults = await widget.rpc.callKw(
+          widget.model,
+          'default_get',
+          args: [names],
+          context: widget.recordContext,
+        );
         record = defaults is Map ? Map<String, dynamic>.from(defaults) : {};
         await _resolveMany2oneDefaults(record, fields);
       }
 
-      final relatedNames = await _loadRelatedNames(record, fields, arch);
+      final (tagNames, lines) = await (_loadTagNames(record, fields, arch), _loadLines(record, views, arch)).wait;
       if (!mounted) return;
       setState(() {
         _fields = fields;
         _arch = arch;
         _record = record;
-        _relatedNames = relatedNames;
+        _tagNames = tagNames;
+        _lines = lines;
         _imageField = imageField;
         _error = null;
       });
@@ -158,27 +159,86 @@ class _RecordFormScreenState extends State<RecordFormScreen> {
     }
   }
 
-  /// Names for x2many values (tags, lines), shown as chips.
-  Future<Map<String, List<String>>> _loadRelatedNames(
-      Map<String, dynamic> record, Map<String, Map<String, dynamic>> fields, FormArch arch) async {
-    final result = <String, List<String>>{};
+  /// Names for many2many values (tags), shown as chips.
+  Future<Map<String, Map<int, String>>> _loadTagNames(
+    Map<String, dynamic> record,
+    Map<String, Map<String, dynamic>> fields,
+    FormArch arch,
+  ) async {
+    final result = <String, Map<int, String>>{};
     await Future.wait([
       for (final name in arch.fieldNames)
-        if ((fields[name]?['type'] == 'many2many' || fields[name]?['type'] == 'one2many') &&
-            record[name] is List &&
-            (record[name] as List).isNotEmpty)
+        if (fields[name]?['type'] == 'many2many')
           () async {
-            final ids = (record[name] as List).whereType<int>().take(20).toList();
+            result[name] = {};
+            final ids = record[name] is List ? (record[name] as List).whereType<int>().take(50).toList() : <int>[];
+            if (ids.isEmpty) return;
             try {
               final rows = await widget.rpc.read(fields[name]!['relation'] as String, ids, ['display_name']);
-              result[name] = [for (final r in rows) r['display_name']?.toString() ?? ''];
+              result[name] = {for (final r in rows) r['id'] as int: r['display_name']?.toString() ?? ''};
             } on OdooException {
-              // No access to the related model: fall back to the count.
+              // No access to the related model: chips show ids.
             }
           }(),
     ]);
     return result;
   }
+
+  /// Lines of each one2many field, laid out from the field's inline views
+  /// (or the related model's default views when it has none).
+  Future<Map<String, X2ManyLines>> _loadLines(Map<String, dynamic> record, ModelViews views, FormArch arch) async {
+    final result = <String, X2ManyLines>{};
+    await Future.wait([
+      for (final f in formFields(arch.body))
+        if (views.fields[f.name]?['type'] == 'one2many' && views.fields[f.name]?['relation'] is String)
+          () async {
+            final relation = views.fields[f.name]!['relation'] as String;
+            var relFields = views.models[relation];
+            var listArch = f.subviews['list'];
+            var formArch = f.subviews['form'];
+            if (listArch == null || relFields == null || relFields.isEmpty) {
+              final defaults = await widget.rpc.getViews(relation, [
+                [false, 'list'],
+                [false, 'form'],
+              ]);
+              relFields = relFields == null || relFields.isEmpty ? defaults.fields : relFields;
+              listArch ??= defaults.archs['list'];
+              if (f.subviews['list'] == null) formArch ??= defaults.archs['form'];
+            }
+            final fieldsOfLine = relFields;
+            final columns = listArch == null
+                ? <ArchField>[]
+                : [
+                    for (final c in parseCardFields(listArch))
+                      if (fieldsOfLine.containsKey(c.name)) c,
+                  ];
+            final lines = X2ManyLines(
+              relation: relation,
+              fields: fieldsOfLine,
+              columns: columns,
+              form: formArch == null ? null : parseFormArch(formArch),
+              extraFields: listArch == null ? const {} : archFieldNames(listArch),
+              items: [],
+              canCreate: listArch == null || archAllows(listArch, 'create'),
+              canDelete: listArch == null || archAllows(listArch, 'delete'),
+            );
+            final ids = record[f.name] is List ? (record[f.name] as List).whereType<int>().take(300).toList() : <int>[];
+            if (ids.isNotEmpty) {
+              final rows = await widget.rpc.read(
+                relation,
+                ids,
+                lines.readFields.toList(),
+                context: widget.recordContext,
+              );
+              lines.items = [for (final r in rows) LineRecord(id: r['id'] as int, values: r, key: 'id-${r['id']}')];
+            }
+            result[f.name] = lines;
+          }(),
+    ]);
+    return result;
+  }
+
+  bool get _dirty => _edits.isNotEmpty || _lines.values.any((l) => l.dirty);
 
   dynamic _value(String name) => _edits.containsKey(name) ? _edits[name] : _record[name];
 
@@ -202,7 +262,7 @@ class _RecordFormScreenState extends State<RecordFormScreen> {
     return field['readonly'] == true;
   }
 
-  bool _editable(Map<String, dynamic> field) => _editableTypes.contains(field['type']);
+  bool _editable(Map<String, dynamic> field) => editableTypes.contains(field['type']);
 
   bool _isRequired(ArchField f, Map<String, dynamic> env) {
     final attr = f.attrs['required'];
@@ -239,20 +299,27 @@ class _RecordFormScreenState extends State<RecordFormScreen> {
       if (!_isReadonly(f, env)) writable.add(f.name);
     }
     if (missing.isNotEmpty || invalid.isNotEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-        content: Text(missing.isNotEmpty ? 'Fill in: ${missing.join(', ')}' : 'Not a number: ${invalid.join(', ')}'),
-      ));
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(missing.isNotEmpty ? 'Fill in: ${missing.join(', ')}' : 'Not a number: ${invalid.join(', ')}'),
+        ),
+      );
       return;
     }
 
     // On create, also send defaults for fields the user could have edited.
     final source = _id == null
-        ? {for (final e in _record.entries) if (writable.contains(e.key)) e.key: e.value, ..._edits}
+        ? {
+            for (final e in _record.entries)
+              if (writable.contains(e.key)) e.key: e.value,
+            ..._edits,
+          }
         : _edits;
     final vals = <String, dynamic>{
       for (final e in source.entries)
-        if (_fields[e.key] != null && _editable(_fields[e.key]!))
-          e.key: e.value is List && _fields[e.key]!['type'] == 'many2one' ? (e.value as List).first : e.value,
+        if (_fields[e.key] != null && _editable(_fields[e.key]!)) e.key: toWriteValue(e.value, _fields[e.key]!),
+      for (final e in _lines.entries)
+        if (e.value.dirty) e.key: e.value.commands(),
     };
 
     setState(() => _busy = true);
@@ -262,7 +329,15 @@ class _RecordFormScreenState extends State<RecordFormScreen> {
         final created = await widget.rpc.callKw(widget.model, 'create', args: [vals], context: widget.recordContext);
         _id = created is List ? created.first as int : created as int;
       } else if (vals.isNotEmpty) {
-        await widget.rpc.callKw(widget.model, 'write', args: [[id], vals], context: widget.recordContext);
+        await widget.rpc.callKw(
+          widget.model,
+          'write',
+          args: [
+            [id],
+            vals,
+          ],
+          context: widget.recordContext,
+        );
       }
       _edits.clear();
       _editing = false;
@@ -286,6 +361,8 @@ class _RecordFormScreenState extends State<RecordFormScreen> {
       _editing = false;
       _formVersion++;
     });
+    // Line edits live in [_lines]; reload them from the server.
+    if (_lines.values.any((l) => l.dirty)) _load();
   }
 
   Future<bool> _confirm(String message, {String action = 'OK'}) async {
@@ -304,13 +381,15 @@ class _RecordFormScreenState extends State<RecordFormScreen> {
 
   void _openInWeb() {
     final id = _id;
-    Navigator.of(context).push(MaterialPageRoute(
-      builder: (_) => WebViewScreen(
-        session: widget.rpc.session,
-        path: id == null ? '/odoo/${widget.model}/new' : '/odoo/${widget.model}/$id',
-        title: widget.title,
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => WebViewScreen(
+          session: widget.rpc.session,
+          path: id == null ? '/odoo/${widget.model}/new' : '/odoo/${widget.model}/$id',
+          title: widget.title,
+        ),
       ),
-    ));
+    );
   }
 
   Future<void> _runButton(FormButton button) async {
@@ -326,8 +405,17 @@ class _RecordFormScreenState extends State<RecordFormScreen> {
     }
     setState(() => _busy = true);
     try {
-      final result = await widget.rpc.callButton(widget.model, button.name, [id],
-          context: {...widget.recordContext, 'active_id': id, 'active_ids': [id], 'active_model': widget.model});
+      final result = await widget.rpc.callButton(
+        widget.model,
+        button.name,
+        [id],
+        context: {
+          ...widget.recordContext,
+          'active_id': id,
+          'active_ids': [id],
+          'active_model': widget.model,
+        },
+      );
       if (!mounted) return;
       final type = result is Map ? result['type'] : null;
       if (type != null && type != 'ir.actions.act_window_close') {
@@ -347,7 +435,14 @@ class _RecordFormScreenState extends State<RecordFormScreen> {
     final id = _id;
     if (id == null || !await _confirm('Delete this record?', action: 'Delete')) return;
     try {
-      await widget.rpc.callKw(widget.model, 'unlink', args: [[id]], context: widget.recordContext);
+      await widget.rpc.callKw(
+        widget.model,
+        'unlink',
+        args: [
+          [id],
+        ],
+        context: widget.recordContext,
+      );
       if (mounted) Navigator.of(context).pop();
     } catch (e) {
       if (mounted) handleRpcError(context, e);
@@ -362,48 +457,26 @@ class _RecordFormScreenState extends State<RecordFormScreen> {
     final value = _value(f.name);
     final theme = Theme.of(context);
 
-    if (type == 'many2many' && _relatedNames[f.name] != null) {
+    if (type == 'many2many') {
+      final ids = value is List ? value.whereType<int>() : const <int>[];
+      if (ids.isEmpty) return Text('—', style: TextStyle(color: theme.colorScheme.outline));
       return Wrap(
         spacing: 6,
         runSpacing: 6,
         children: [
-          for (final n in _relatedNames[f.name]!)
+          for (final n in [for (final id in ids) _tagNames[f.name]?[id] ?? '#$id'])
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
               decoration: BoxDecoration(
                 color: colorFor(n).withValues(alpha: 0.12),
                 borderRadius: BorderRadius.circular(20),
               ),
-              child: Text(n, style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: colorFor(n))),
-            ),
-        ],
-      );
-    }
-    if (type == 'one2many' && value is List && value.isNotEmpty) {
-      final names = _relatedNames[f.name] ?? const <String>[];
-      return InkWell(
-        onTap: () => Navigator.of(context).push(MaterialPageRoute(
-          builder: (_) => RecordListScreen(
-            rpc: widget.rpc,
-            model: field['relation'] as String,
-            title: _label(f),
-            domain: [
-              ['id', 'in', value],
-            ],
-          ),
-        )),
-        child: Row(
-          children: [
-            Expanded(
               child: Text(
-                names.isEmpty ? formatFieldValue(value, field) : names.join('\n'),
-                maxLines: 6,
-                overflow: TextOverflow.ellipsis,
+                n,
+                style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: colorFor(n)),
               ),
             ),
-            Icon(Icons.chevron_right, color: theme.colorScheme.outline),
-          ],
-        ),
+        ],
       );
     }
     if (type == 'boolean') {
@@ -452,9 +525,9 @@ class _RecordFormScreenState extends State<RecordFormScreen> {
     }
 
     if (!_fields.containsKey('street') && !_fields.containsKey('city')) return null;
-    final parts = [for (final n in const ['street', 'street2', 'city', 'state_id', 'zip', 'country_id']) part(n)]
-        .where((p) => p.isNotEmpty)
-        .toList();
+    final parts = [
+      for (final n in const ['street', 'street2', 'city', 'state_id', 'zip', 'country_id']) part(n),
+    ].where((p) => p.isNotEmpty).toList();
     return parts.isEmpty ? null : parts.join(', ');
   }
 
@@ -501,118 +574,79 @@ class _RecordFormScreenState extends State<RecordFormScreen> {
     );
   }
 
-  Widget _fieldEditor(ArchField f, bool required) {
+  Widget _fieldEditor(ArchField f, bool required, Map<String, dynamic> env) {
     final field = _fields[f.name]!;
-    final type = field['type'] as String;
-    final value = _value(f.name);
-    final label = _label(f) + (required ? ' *' : '');
-    final key = ValueKey('${f.name}-$_formVersion');
-
-    switch (type) {
-      case 'boolean':
-        return SwitchListTile(
-          contentPadding: EdgeInsets.zero,
-          title: Text(label),
-          value: value == true,
-          onChanged: (v) => setState(() => _edits[f.name] = v),
-        );
-      case 'selection':
-        final options = [
-          for (final o in (field['selection'] as List? ?? const []))
-            if (o is List && o.length > 1) (o[0], o[1].toString()),
-        ];
-        return DropdownButtonFormField<Object>(
-          key: ValueKey('${f.name}-$_formVersion-$value'),
-          initialValue: options.any((o) => o.$1 == value) ? value as Object : null,
-          isExpanded: true,
-          decoration: InputDecoration(labelText: label),
-          items: [
-            if (!required) const DropdownMenuItem<Object>(value: false, child: Text('—')),
-            for (final (k, v) in options) DropdownMenuItem<Object>(value: k as Object, child: Text(v)),
-          ],
-          onChanged: (v) => setState(() => _edits[f.name] = v ?? false),
-        );
-      case 'many2one':
-        final text = formatFieldValue(value, field);
-        return _tapField(label, text, Icons.arrow_drop_down, () async {
-          final picked = await showMany2onePicker(
-            context,
-            rpc: widget.rpc,
-            model: field['relation'] as String,
-            title: _label(f),
-            allowClear: !required,
-            recordContext: widget.recordContext,
-          );
-          if (picked != null && mounted) setState(() => _edits[f.name] = picked);
-        });
-      case 'date':
-      case 'datetime':
-        final isDate = type == 'date';
-        final current = isDate ? parseOdooDate(value) : parseOdooDateTime(value);
-        return _tapField(label, formatFieldValue(value, field), Icons.calendar_today, () async {
-          final now = DateTime.now();
-          final day = await showDatePicker(
-            context: context,
-            initialDate: current ?? now,
-            firstDate: DateTime(1900),
-            lastDate: DateTime(2200),
-          );
-          if (day == null || !mounted) return;
-          if (isDate) {
-            setState(() => _edits[f.name] = serializeOdooDate(day));
-            return;
-          }
-          final time = await showTimePicker(
-            context: context,
-            initialTime: TimeOfDay.fromDateTime(current ?? now),
-          );
-          if (time == null) return;
-          final local = DateTime(day.year, day.month, day.day, time.hour, time.minute);
-          setState(() => _edits[f.name] = serializeOdooDateTime(local));
-        }, onClear: required || value == false || value == null ? null : () => setState(() => _edits[f.name] = false));
-      default:
-        final numeric = type == 'integer' || type == 'float' || type == 'monetary';
-        final initial = value == null || value == false
-            ? ''
-            : (value is double && value == value.truncateToDouble() ? value.toInt().toString() : value.toString());
-        return TextFormField(
-          key: key,
-          initialValue: initial,
-          minLines: type == 'text' ? 2 : 1,
-          maxLines: type == 'text' ? 6 : 1,
-          keyboardType: numeric
-              ? TextInputType.numberWithOptions(decimal: type != 'integer', signed: true)
-              : (type == 'text' ? TextInputType.multiline : TextInputType.text),
-          decoration: InputDecoration(labelText: label),
-          onChanged: (raw) {
-            final t = raw.trim();
-            if (!numeric) {
-              _edits[f.name] = raw.isEmpty ? false : raw;
-            } else if (t.isEmpty) {
-              _edits[f.name] = type == 'integer' ? 0 : 0.0;
-            } else {
-              final cleaned = t.replaceAll(',', '');
-              // Keep unparsable input as text so save can flag it.
-              _edits[f.name] = (type == 'integer' ? int.tryParse(cleaned) : double.tryParse(cleaned)) ?? raw;
-            }
-          },
-        );
-    }
+    return FieldEditor(
+      rpc: widget.rpc,
+      name: f.name,
+      field: field,
+      label: _label(f),
+      required: required,
+      value: _value(f.name),
+      version: _formVersion,
+      recordContext: widget.recordContext,
+      domain: pickerDomain(f.attrs['domain'], field['domain'], env),
+      tagNames: _tagNames[f.name] ?? const {},
+      onTagName: (id, name) => (_tagNames[f.name] ??= {})[id] = name,
+      onChanged: (v) => setState(() => _edits[f.name] = v),
+    );
   }
 
-  Widget _tapField(String label, String text, IconData icon, VoidCallback onTap, {VoidCallback? onClear}) {
-    return InkWell(
-      onTap: onTap,
-      child: InputDecorator(
-        decoration: InputDecoration(
-          labelText: label,
-          suffixIcon: onClear != null
-              ? IconButton(icon: const Icon(Icons.clear), tooltip: 'Clear', onPressed: onClear)
-              : Icon(icon),
-        ),
-        isEmpty: text.isEmpty,
-        child: Text(text),
-      ),
+  Future<void> _openLine(String fieldName, ArchField f, LineRecord? existing, bool readonly) async {
+    final lines = _lines[fieldName]!;
+    if (existing == null && !_editing) setState(() => _editing = true);
+    final line = existing ?? LineRecord(values: const {}, key: lines.nextKey());
+    final result = await showLineEditor(
+      context,
+      rpc: widget.rpc,
+      lines: lines,
+      line: line,
+      parentEnv: _env,
+      readonly: readonly || !_editing,
+      title: existing == null ? 'Add: ${_label(f)}' : _label(f),
+      recordContext: widget.recordContext,
+    );
+    if (!mounted || result == null) return;
+    setState(() {
+      switch (result) {
+        case LineSaved(:final changes):
+          if (existing == null) {
+            lines.items = [...lines.items, LineRecord(values: const {}, changes: changes, key: line.key)];
+          } else {
+            existing.changes
+              ..clear()
+              ..addAll(changes);
+          }
+        case LineRemoved():
+          _removeLine(lines, line);
+      }
+    });
+  }
+
+  void _removeLine(X2ManyLines lines, LineRecord line) {
+    final id = line.id;
+    if (id != null) lines.removed.add(id);
+    lines.items = [
+      for (final l in lines.items)
+        if (l.key != line.key) l,
+    ];
+  }
+
+  Widget _linesField(ArchField f, Map<String, dynamic> env) {
+    final lines = _lines[f.name]!;
+    final field = _fields[f.name]!;
+    final readonly =
+        !(_arch?.canEdit ?? true) ||
+        (f.attrs['readonly'] != null ? evalModifier(f.attrs['readonly'], env) : field['readonly'] == true);
+    return X2ManyLinesView(
+      lines: lines,
+      parentEnv: env,
+      editing: _editing,
+      readonly: readonly,
+      addLabel: 'Add a line',
+      onAdd: () => _openLine(f.name, f, null, readonly),
+      onOpen: (line) => _openLine(f.name, f, line, readonly),
+      onRemove: (line) => setState(() => _removeLine(lines, line)),
     );
   }
 
@@ -622,21 +656,30 @@ class _RecordFormScreenState extends State<RecordFormScreen> {
     return type == 'html' || type == 'text' || type == 'one2many' || f.attrs['nolabel'] == '1';
   }
 
-  Widget _fieldRow(ArchField f, Map<String, dynamic> env) {
+  Widget _fieldRow(ArchField f, Map<String, dynamic> env, {bool showLabel = true}) {
     final scheme = Theme.of(context).colorScheme;
+    final label = Text(_label(f), style: TextStyle(fontSize: 13, color: scheme.onSurfaceVariant));
+    if (_lines.containsKey(f.name)) {
+      return Padding(
+        padding: const EdgeInsets.symmetric(vertical: 10),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [if (showLabel) ...[label, const SizedBox(height: 4)], _linesField(f, env)],
+        ),
+      );
+    }
     if (_editing && !_isReadonly(f, env)) {
       return Padding(
         padding: const EdgeInsets.symmetric(vertical: 7),
-        child: _fieldEditor(f, _isRequired(f, env)),
+        child: _fieldEditor(f, _isRequired(f, env), env),
       );
     }
-    final label = Text(_label(f), style: TextStyle(fontSize: 13, color: scheme.onSurfaceVariant));
-    if (_isWide(f)) {
+    if (_isWide(f) || !showLabel) {
       return Padding(
         padding: const EdgeInsets.symmetric(vertical: 10),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
-          children: [label, const SizedBox(height: 4), _fieldView(f)],
+          children: [if (showLabel) ...[label, const SizedBox(height: 4)], _fieldView(f)],
         ),
       );
     }
@@ -645,7 +688,10 @@ class _RecordFormScreenState extends State<RecordFormScreen> {
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Expanded(flex: 2, child: Padding(padding: const EdgeInsets.only(top: 1), child: label)),
+          Expanded(
+            flex: 2,
+            child: Padding(padding: const EdgeInsets.only(top: 1), child: label),
+          ),
           const SizedBox(width: 12),
           Expanded(flex: 3, child: _fieldView(f)),
         ],
@@ -655,11 +701,8 @@ class _RecordFormScreenState extends State<RecordFormScreen> {
 
   /// Rows separated by hairlines, as in a settings list.
   List<Widget> _divided(List<Widget> rows) => [
-        for (var i = 0; i < rows.length; i++) ...[
-          if (i > 0 && !_editing) const Divider(height: 1),
-          rows[i],
-        ],
-      ];
+    for (var i = 0; i < rows.length; i++) ...[if (i > 0 && !_editing) const Divider(height: 1), rows[i]],
+  ];
 
   List<Widget> _renderNodes(List<FormNode> nodes, Map<String, dynamic> env, int depth) {
     final theme = Theme.of(context);
@@ -675,14 +718,14 @@ class _RecordFormScreenState extends State<RecordFormScreen> {
     for (var i = 0; i < nodes.length; i++) {
       final node = nodes[i];
       switch (node) {
-        case FormFieldNode(:final field, :final isTitle):
+        case FormFieldNode(:final field, :final isTitle, :final inGroup):
           if (isTitle || !_fields.containsKey(field.name)) continue;
           if (_fields[field.name]!['type'] == 'binary') continue;
           if (evalModifier(field.attrs['invisible'], env)) continue;
           // A field Odoo lays out twice (e.g. company and person variants)
           // is shown once.
           if (!_renderedFields.add(field.name)) continue;
-          loose.add(_fieldRow(field, env));
+          loose.add(_fieldRow(field, env, showLabel: inGroup));
         case FormGroupNode(isPage: true):
           // A run of pages is a notebook: show it as tabs.
           final pages = <FormGroupNode>[];
@@ -692,9 +735,9 @@ class _RecordFormScreenState extends State<RecordFormScreen> {
             i++;
           }
           i--;
-          final rendered = [
-            for (final p in pages) (p.title ?? '', _renderNodes(p.children, env, depth + 1)),
-          ].where((p) => p.$2.isNotEmpty).toList();
+          final rendered = [for (final p in pages) (p.title ?? '', _renderNodes(p.children, env, depth + 1))]
+              .where((p) => p.$2.isNotEmpty)
+              .toList();
           if (rendered.isEmpty) continue;
           flushLoose();
           out.add(_notebook(rendered));
@@ -767,10 +810,7 @@ class _RecordFormScreenState extends State<RecordFormScreen> {
             if (pages.length > 1) const Divider(height: 1),
             Padding(
               padding: const EdgeInsets.fromLTRB(16, 4, 16, 6),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: _divided(pages[selected].$2),
-              ),
+              child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: _divided(pages[selected].$2)),
             ),
           ],
         ),
@@ -779,16 +819,16 @@ class _RecordFormScreenState extends State<RecordFormScreen> {
   }
 
   Widget _subheading(String title, ThemeData theme) => Padding(
-        padding: const EdgeInsets.only(top: 14, bottom: 4),
-        child: Text(
-          title.toUpperCase(),
-          style: theme.textTheme.labelSmall?.copyWith(
-            color: theme.colorScheme.primary,
-            fontWeight: FontWeight.w700,
-            letterSpacing: 0.8,
-          ),
-        ),
-      );
+    padding: const EdgeInsets.only(top: 14, bottom: 4),
+    child: Text(
+      title.toUpperCase(),
+      style: theme.textTheme.labelSmall?.copyWith(
+        color: theme.colorScheme.primary,
+        fontWeight: FontWeight.w700,
+        letterSpacing: 0.8,
+      ),
+    ),
+  );
 
   Widget _section(String? title, List<Widget> children) {
     return Padding(
@@ -882,7 +922,10 @@ class _RecordFormScreenState extends State<RecordFormScreen> {
     final title = _id == null ? 'New ${widget.title}' : (_value('display_name') ?? widget.title).toString();
     final buttons = _editing || _id == null
         ? const <FormButton>[]
-        : [for (final b in arch.buttons) if (!evalModifier(b.invisible, env)) b];
+        : [
+            for (final b in arch.buttons)
+              if (!evalModifier(b.invisible, env)) b,
+          ];
 
     return Padding(
       padding: const EdgeInsets.only(bottom: 12),
@@ -918,10 +961,7 @@ class _RecordFormScreenState extends State<RecordFormScreen> {
                   ],
                 ),
               if (!_editing && _id != null) _quickActions(_visibleFields(arch.body, env)),
-              if (arch.statusBar != null) ...[
-                const SizedBox(height: 14),
-                _statusBar(arch.statusBar!),
-              ],
+              if (arch.statusBar != null) ...[const SizedBox(height: 14), _statusBar(arch.statusBar!)],
               if (buttons.isNotEmpty) ...[
                 const SizedBox(height: 14),
                 Divider(height: 1, color: scheme.outlineVariant.withValues(alpha: 0.5)),
@@ -971,10 +1011,13 @@ class _RecordFormScreenState extends State<RecordFormScreen> {
     final arch = _arch;
     final Widget body;
     if (_error != null) {
-      body = ErrorView.fromError(_error!, onRetry: () {
-        setState(() => _error = null);
-        _load();
-      });
+      body = ErrorView.fromError(
+        _error!,
+        onRetry: () {
+          setState(() => _error = null);
+          _load();
+        },
+      );
     } else if (arch == null) {
       body = ListView(
         padding: const EdgeInsets.all(16),
@@ -1028,7 +1071,7 @@ class _RecordFormScreenState extends State<RecordFormScreen> {
     }
 
     return PopScope(
-      canPop: !_editing || _edits.isEmpty,
+      canPop: !_editing || !_dirty,
       onPopInvokedWithResult: (didPop, _) async {
         if (didPop) return;
         if (await _confirm('Discard your changes?', action: 'Discard') && context.mounted) {
@@ -1097,13 +1140,13 @@ class _SkeletonRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => const Padding(
-        padding: EdgeInsets.only(bottom: 18),
-        child: Row(
-          children: [
-            Expanded(flex: 2, child: Skeleton(height: 12)),
-            SizedBox(width: 24),
-            Expanded(flex: 3, child: Skeleton(height: 14)),
-          ],
-        ),
-      );
+    padding: EdgeInsets.only(bottom: 18),
+    child: Row(
+      children: [
+        Expanded(flex: 2, child: Skeleton(height: 12)),
+        SizedBox(width: 24),
+        Expanded(flex: 3, child: Skeleton(height: 14)),
+      ],
+    ),
+  );
 }
