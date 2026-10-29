@@ -62,8 +62,9 @@ jobs:
             --title "Test APK (${{ github.ref_name }})" \
             --notes "Built from ${{ github.sha }}. Install on Android: allow installs from unknown sources, then open the APK."
 
-  # Proves the iOS app compiles. The IPA is unsigned, so it can't be installed
-  # on an iPhone until signing (Apple Developer account) is added.
+  # Unsigned IPA: installable on an iPhone after signing it with a free
+  # Apple ID (e.g. Sideloadly); the app then runs for 7 days.
+  # Simulator zip: upload to appetize.io to run the app in a browser.
   ios:
     runs-on: macos-latest
     steps:
@@ -88,3 +89,14 @@ jobs:
         with:
           name: odoo-mobile-ios-unsigned
           path: odoo-mobile-ios-unsigned.ipa
+
+      # Flutter builds simulator apps in debug mode only; Appetize runs them as is.
+      - run: flutter build ios --simulator --debug
+
+      - name: Package simulator app
+        run: cd build/ios/iphonesimulator && zip -qr ../../../odoo-mobile-ios-simulator.zip Runner.app
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: odoo-mobile-ios-simulator
+          path: odoo-mobile-ios-simulator.zip
