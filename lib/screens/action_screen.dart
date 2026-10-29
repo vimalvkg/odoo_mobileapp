@@ -70,22 +70,6 @@ class _ActionScreenState extends State<ActionScreen> {
     return app == null ? null : AppMenuDrawer(rpc: widget.rpc, app: app, currentMenuId: widget.menuId);
   }
 
-  /// `[[viewId or false, type]]`, with Odoo <18 `tree` renamed to `list`.
-  static List<List<dynamic>> _views(Map<String, dynamic> action) {
-    final raw = action['views'];
-    final List<List<dynamic>> views;
-    if (raw is List && raw.isNotEmpty) {
-      views = [for (final v in raw) if (v is List && v.length == 2) [v[0], v[1]]];
-    } else {
-      final modes = (action['view_mode'] as String? ?? 'list,form').split(',');
-      views = [for (final m in modes) [false, m.trim()]];
-    }
-    for (final v in views) {
-      if (v[1] == 'tree') v[1] = 'list';
-    }
-    return views;
-  }
-
   Widget _webFallback(String title) => WebViewScreen(
         session: widget.rpc.session,
         path: '/odoo/action-${widget.actionId}',
@@ -119,7 +103,7 @@ class _ActionScreenState extends State<ActionScreen> {
     }
 
     final env = widget.rpc.evalEnv;
-    final views = _views(action);
+    final views = actionViews(action);
     final viewIds = <String, int?>{for (final v in views) v[1] as String: v[0] is int ? v[0] as int : null};
     final actionContext = parseContext(action['context'], env) ?? {};
     final resId = action['res_id'];
@@ -152,6 +136,45 @@ class _ActionScreenState extends State<ActionScreen> {
       viewIds: viewIds,
       webPath: '/odoo/action-${widget.actionId}',
       drawer: _drawer,
+      subtitle: widget.app?.name,
     );
   }
+}
+
+/// `[[viewId or false, type]]` of a window action, with Odoo <18 `tree`
+/// renamed to `list`.
+List<List<dynamic>> actionViews(Map<String, dynamic> action) {
+  final raw = action['views'];
+  final List<List<dynamic>> views;
+  if (raw is List && raw.isNotEmpty) {
+    views = [for (final v in raw) if (v is List && v.length == 2) [v[0], v[1]]];
+  } else {
+    final modes = (action['view_mode'] as String? ?? 'list,form').split(',');
+    views = [for (final m in modes) [false, m.trim()]];
+  }
+  for (final v in views) {
+    if (v[1] == 'tree') v[1] = 'list';
+  }
+  return views;
+}
+
+/// Opens an empty form for the model a menu's action shows, with the
+/// action's defaults (its context), e.g. "New quotation" from Quotations.
+/// Returns false when the action can't create records natively.
+Future<bool> openCreateForm(BuildContext context, OdooRpc rpc, int actionId, String title) async {
+  final action = await rpc.loadAction(actionId);
+  final model = action['res_model'];
+  if (action['type'] != 'ir.actions.act_window' || model is! String || _webOnlyModels.contains(model)) return false;
+  final formId = [for (final v in actionViews(action)) if (v[1] == 'form') v[0]].firstOrNull;
+  if (!context.mounted) return true;
+  await Navigator.of(context).push(MaterialPageRoute(
+    builder: (_) => RecordFormScreen(
+      rpc: rpc,
+      model: model,
+      formViewId: formId is int ? formId : null,
+      recordContext: parseContext(action['context'], rpc.evalEnv) ?? {},
+      title: title,
+    ),
+  ));
+  return true;
 }

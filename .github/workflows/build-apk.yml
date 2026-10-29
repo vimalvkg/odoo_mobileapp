@@ -1,8 +1,8 @@
 name: Build mobile apps
 
+# Builds run only when started by hand (Actions tab → Run workflow), so
+# test APKs are produced on request rather than on every push.
 on:
-  push:
-    branches: [main, 'claude/**']
   workflow_dispatch:
 
 permissions:

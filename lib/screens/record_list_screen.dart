@@ -37,6 +37,9 @@ class RecordListScreen extends StatefulWidget {
 
   /// Same screen in the web client, for "Open in web".
   final String? webPath;
+
+  /// Shown above the title, e.g. the app ("Sales" above "Quotations").
+  final String? subtitle;
   final Widget? drawer;
 
   const RecordListScreen({
@@ -50,6 +53,7 @@ class RecordListScreen extends StatefulWidget {
     this.viewIds = const {'list': null, 'form': null},
     this.webPath,
     this.drawer,
+    this.subtitle,
   });
 
   @override
@@ -79,6 +83,10 @@ class _RecordListScreenState extends State<RecordListScreen> {
   String _query = '';
   int? _total;
 
+  /// Sum of the list's `sum` column over all matching records, as Odoo's
+  /// list footer shows it.
+  num? _sum;
+
   @override
   void initState() {
     super.initState();
@@ -96,18 +104,17 @@ class _RecordListScreenState extends State<RecordListScreen> {
   Future<void> _init() async {
     try {
       final cardType = widget.viewIds.containsKey('list') ? 'list' : 'kanban';
-      final views = await widget.rpc.getViews(
-        widget.model,
-        [
-          [widget.viewIds[cardType] ?? false, cardType],
-          [widget.viewIds['search'] ?? false, 'search'],
-        ],
-        context: widget.recordContext,
-      );
+      final views = await widget.rpc.getViews(widget.model, [
+        [widget.viewIds[cardType] ?? false, cardType],
+        [widget.viewIds['search'] ?? false, 'search'],
+      ], context: widget.recordContext);
       final cardArch = views.archs[cardType];
       if (cardArch == null) throw const OdooException('This model has no list view.');
 
-      final env = {...widget.rpc.evalEnv, 'context': {...widget.rpc.userContext, ...widget.recordContext}};
+      final env = {
+        ...widget.rpc.evalEnv,
+        'context': {...widget.rpc.userContext, ...widget.recordContext},
+      };
       final filters = <(SearchFilter, List<dynamic>)>[];
       for (final f in parseSearchFilters(views.archs['search'] ?? '<search/>')) {
         final domain = parseDomain(f.domain, env);
@@ -122,8 +129,14 @@ class _RecordListScreenState extends State<RecordListScreen> {
       ];
       _filters = filters;
       _imageField = imageFieldOf(views.fields);
-      _phoneField = [for (final n in phoneFieldNames) if (views.fields[n]?['type'] == 'char') n].firstOrNull;
-      _emailField = [for (final n in emailFieldNames) if (views.fields[n]?['type'] == 'char') n].firstOrNull;
+      _phoneField = [
+        for (final n in phoneFieldNames)
+          if (views.fields[n]?['type'] == 'char') n,
+      ].firstOrNull;
+      _emailField = [
+        for (final n in emailFieldNames)
+          if (views.fields[n]?['type'] == 'char') n,
+      ].firstOrNull;
       _canArchive = views.fields['active']?['type'] == 'boolean';
       _activeFilters
         ..clear()
@@ -170,12 +183,7 @@ class _RecordListScreenState extends State<RecordListScreen> {
   Future<void> _fetch({bool reset = false}) async {
     final views = _views;
     if (views == null) return;
-    final fields = {
-      'display_name',
-      for (final f in _cardFields) f.name,
-      ?_phoneField,
-      ?_emailField,
-    }.toList();
+    final fields = {'display_name', for (final f in _cardFields) f.name, ?_phoneField, ?_emailField}.toList();
     final limit = reset ? (_records.length > _pageSize ? _records.length : _pageSize) : _pageSize;
     final domain = _domain;
     final (records, total) = await (
@@ -190,7 +198,8 @@ class _RecordListScreenState extends State<RecordListScreen> {
       reset
           ? widget.rpc.callKw(widget.model, 'search_count', args: [domain], context: widget.recordContext)
           : Future<dynamic>.value(_total),
-    ).wait;
+    ).both;
+    if (reset) _loadSum(domain);
     if (!mounted) return;
     setState(() {
       _records = reset ? records : [..._records, ...records];
@@ -198,6 +207,59 @@ class _RecordListScreenState extends State<RecordListScreen> {
       _hasMore = records.length == limit;
       _error = null;
     });
+  }
+
+  /// The column the list view totals (`sum="..."`), if any.
+  ArchField? get _sumField => _cardFields
+      .where(
+        (f) =>
+            f.attrs.containsKey('sum') &&
+            const {'monetary', 'float', 'integer'}.contains(_views?.fields[f.name]?['type']),
+      )
+      .firstOrNull;
+
+  Future<void> _loadSum(List<dynamic> domain) async {
+    final field = _sumField;
+    if (field == null) return;
+    num? value;
+    try {
+      // Odoo 19 API, then the older read_group.
+      final rows = await widget.rpc.callKw(
+        widget.model,
+        'formatted_read_group',
+        args: [
+          domain,
+          <String>[],
+          ['${field.name}:sum'],
+        ],
+        context: widget.recordContext,
+      );
+      if (rows is List && rows.isNotEmpty && rows.first is Map) {
+        final row = rows.first as Map;
+        value = (row['${field.name}:sum'] ?? row[field.name]) as num?;
+      }
+    } on OdooException catch (e) {
+      if (e.isSessionExpired || e.isNetwork) return;
+      try {
+        final rows = await widget.rpc.callKw(
+          widget.model,
+          'read_group',
+          args: [
+            domain,
+            ['${field.name}:sum'],
+            <String>[],
+          ],
+          kwargs: {'lazy': false},
+          context: widget.recordContext,
+        );
+        if (rows is List && rows.isNotEmpty && rows.first is Map) value = (rows.first as Map)[field.name] as num?;
+      } catch (_) {
+        value = null;
+      }
+    } catch (_) {
+      value = null;
+    }
+    if (mounted) setState(() => _sum = value);
   }
 
   Future<void> _refresh() async {
@@ -221,27 +283,32 @@ class _RecordListScreenState extends State<RecordListScreen> {
   }
 
   Future<void> _openRecord(int? id) async {
-    await Navigator.of(context).push(MaterialPageRoute(
-      builder: (_) => RecordFormScreen(
-        rpc: widget.rpc,
-        model: widget.model,
-        recordId: id,
-        formViewId: widget.viewIds['form'],
-        recordContext: widget.recordContext,
-        title: id == null ? 'New' : widget.title,
+    await Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => RecordFormScreen(
+          rpc: widget.rpc,
+          model: widget.model,
+          recordId: id,
+          formViewId: widget.viewIds['form'],
+          recordContext: widget.recordContext,
+          title: id == null ? 'New' : widget.title,
+        ),
       ),
-    ));
+    );
     _refresh();
   }
 
   void _toggleFilter(String name) {
+    HapticFeedback.selectionClick();
     setState(() => _activeFilters.contains(name) ? _activeFilters.remove(name) : _activeFilters.add(name));
     _research();
   }
 
   Widget _filterChips() {
+    final scheme = Theme.of(context).colorScheme;
+    final c = AppColors.of(context);
     return SizedBox(
-      height: 44,
+      height: 36,
       child: ListView(
         scrollDirection: Axis.horizontal,
         padding: const EdgeInsets.symmetric(horizontal: 16),
@@ -249,12 +316,28 @@ class _RecordListScreenState extends State<RecordListScreen> {
           for (final (f, _) in _filters)
             Padding(
               padding: const EdgeInsets.only(right: 8),
-              child: FilterChip(
-                label: Text(f.label),
-                selected: _activeFilters.contains(f.name),
-                showCheckmark: false,
-                visualDensity: VisualDensity.compact,
-                onSelected: (_) => _toggleFilter(f.name),
+              child: Material(
+                color: _activeFilters.contains(f.name) ? scheme.primary : c.card,
+                shape: StadiumBorder(
+                  side: BorderSide(color: _activeFilters.contains(f.name) ? scheme.primary : c.border),
+                ),
+                child: InkWell(
+                  customBorder: const StadiumBorder(),
+                  onTap: () => _toggleFilter(f.name),
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 14),
+                    child: Center(
+                      child: Text(
+                        f.label,
+                        style: TextStyle(
+                          fontSize: 13,
+                          fontWeight: _activeFilters.contains(f.name) ? FontWeight.w600 : FontWeight.w500,
+                          color: _activeFilters.contains(f.name) ? scheme.onPrimary : c.ink,
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
               ),
             ),
         ],
@@ -266,17 +349,70 @@ class _RecordListScreenState extends State<RecordListScreen> {
     final (bg, fg) = statusColors(key, Theme.of(context).colorScheme);
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 3),
-      decoration: BoxDecoration(color: bg, borderRadius: BorderRadius.circular(20)),
-      child: Text(text, style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: fg)),
+      decoration: BoxDecoration(color: bg, borderRadius: BorderRadius.circular(10)),
+      child: Text(
+        text,
+        style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: fg),
+      ),
     );
+  }
+
+  /// The list's first date column, used for "Today / Yesterday" sections.
+  ArchField? get _dateField =>
+      _cardFields.where((f) => const {'date', 'datetime'}.contains(_views?.fields[f.name]?['type'])).firstOrNull;
+
+  DateTime? _dateOf(Map<String, dynamic> record) {
+    final f = _dateField;
+    if (f == null) return null;
+    final v = record[f.name];
+    return _views!.fields[f.name]!['type'] == 'date' ? parseOdooDate(v) : parseOdooDateTime(v);
+  }
+
+  static String _bucket(DateTime d) {
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    final day = DateTime(d.year, d.month, d.day);
+    final diff = today.difference(day).inDays;
+    if (diff == 0) return 'Today';
+    if (diff == 1) return 'Yesterday';
+    if (diff == -1) return 'Tomorrow';
+    if (diff > 1 && diff < 7) return 'This week';
+    if (diff < 0 && diff > -7) return 'Next 7 days';
+    if (d.year == now.year && d.month == now.month) return 'This month';
+    return '${const ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'][d.month - 1]} ${d.year}';
+  }
+
+  /// Section headings by date, only when the records are actually ordered
+  /// by that date (otherwise headings would repeat).
+  List<String?> get _sections {
+    final dates = [for (final r in _records) _dateOf(r)];
+    if (dates.whereType<DateTime>().length < 2) return List.filled(_records.length, null);
+    final known = dates.whereType<DateTime>().toList();
+    var desc = true, asc = true;
+    for (var i = 1; i < known.length; i++) {
+      if (known[i].isAfter(known[i - 1])) desc = false;
+      if (known[i].isBefore(known[i - 1])) asc = false;
+    }
+    if (!desc && !asc) return List.filled(_records.length, null);
+    String? last;
+    return [
+      for (final d in dates)
+        () {
+          final b = d == null ? 'No date' : _bucket(d);
+          if (b == last) return null;
+          last = b;
+          return b;
+        }(),
+    ];
   }
 
   Widget _card(Map<String, dynamic> record) {
     final fields = _views!.fields;
-    final scheme = Theme.of(context).colorScheme;
+    final c = AppColors.of(context);
 
     ArchField? badge;
     ArchField? amount;
+    ArchField? party;
     for (final f in _cardFields) {
       final type = fields[f.name]?['type'];
       if (badge == null &&
@@ -285,27 +421,33 @@ class _RecordListScreenState extends State<RecordListScreen> {
         badge = f;
       }
       if (type == 'monetary') amount = f;
+      if (party == null && type == 'many2one' && const {'partner_id', 'customer_id', 'employee_id'}.contains(f.name)) {
+        party = f;
+      }
     }
+    final date = _dateField;
+    final name = record['display_name']?.toString() ?? '';
+    final partyName = party == null ? '' : formatFieldValue(record[party.name], fields[party.name]!);
+    // Orders and invoices read best as "Customer" with the reference below.
+    final title = partyName.isNotEmpty && partyName != name ? partyName : name;
     final details = [
+      if (title != name) name,
       for (final f in _cardFields)
-        if (f != badge && f != amount && f.name != 'name' && f.name != 'display_name')
+        if (f != badge && f != amount && f != party && f != date && f.name != 'name' && f.name != 'display_name')
           formatFieldValue(record[f.name], fields[f.name]!),
-    ].where((s) => s.isNotEmpty).toList();
-    final title = record['display_name']?.toString() ?? '';
+    ].where((s) => s.isNotEmpty).take(3).join(' · ');
     final badgeText = badge == null ? '' : formatFieldValue(record[badge.name], fields[badge.name]!);
     final amountText = amount == null ? '' : formatFieldValue(record[amount.name], fields[amount.name]!);
+    final dateText = date == null ? '' : formatFieldValue(record[date.name], fields[date.name]!);
 
-    final phone = _phoneField == null ? null : record[_phoneField];
-    final email = _emailField == null ? null : record[_emailField];
-    final hasContact = phone is String || email is String;
     final card = Padding(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 5),
       child: Card(
         child: InkWell(
-          borderRadius: BorderRadius.circular(16),
+          borderRadius: BorderRadius.circular(18),
           onTap: record['id'] is int ? () => _openRecord(record['id'] as int) : null,
           child: Padding(
-            padding: const EdgeInsets.fromLTRB(14, 14, 14, 14),
+            padding: const EdgeInsets.all(14),
             child: Row(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
@@ -315,6 +457,8 @@ class _RecordListScreenState extends State<RecordListScreen> {
                   id: record['id'] as int?,
                   imageField: _imageField,
                   text: title,
+                  size: 44,
+                  circle: false,
                 ),
                 const SizedBox(width: 12),
                 Expanded(
@@ -334,32 +478,36 @@ class _RecordListScreenState extends State<RecordListScreen> {
                           ),
                           if (amountText.isNotEmpty) ...[
                             const SizedBox(width: 8),
-                            Text(amountText, style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w700)),
+                            Text(amountText, style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w800)),
                           ],
                         ],
                       ),
-                      if (details.isNotEmpty) ...[
-                        const SizedBox(height: 3),
-                        Text(
-                          details.first,
-                          style: TextStyle(fontSize: 13, color: scheme.onSurfaceVariant),
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                      ],
-                      if (details.length > 1 || badgeText.isNotEmpty) ...[
-                        const SizedBox(height: 8),
+                      if (details.isNotEmpty || badgeText.isNotEmpty) ...[
+                        const SizedBox(height: 4),
                         Row(
                           children: [
                             Expanded(
                               child: Text(
-                                details.skip(1).take(2).join(' · '),
-                                style: TextStyle(fontSize: 12, color: scheme.outline),
+                                details,
+                                style: TextStyle(fontSize: 13, color: c.muted),
                                 maxLines: 1,
                                 overflow: TextOverflow.ellipsis,
                               ),
                             ),
-                            if (badgeText.isNotEmpty) _statusPill(badgeText, record[badge!.name]),
+                            if (badgeText.isNotEmpty) ...[
+                              const SizedBox(width: 8),
+                              _statusPill(badgeText, record[badge!.name]),
+                            ],
+                          ],
+                        ),
+                      ],
+                      if (dateText.isNotEmpty) ...[
+                        const SizedBox(height: 6),
+                        Row(
+                          children: [
+                            Icon(Icons.calendar_today_outlined, size: 13, color: c.muted),
+                            const SizedBox(width: 5),
+                            Text(dateText, style: TextStyle(fontSize: 12, color: c.muted)),
                           ],
                         ),
                       ],
@@ -372,8 +520,12 @@ class _RecordListScreenState extends State<RecordListScreen> {
         ),
       ),
     );
+    final phone = _phoneField == null ? null : record[_phoneField];
+    final email = _emailField == null ? null : record[_emailField];
+    final hasContact = phone is String || email is String;
     final id = record['id'];
     if (id is! int || (!hasContact && !_canArchive)) return card;
+    final scheme = Theme.of(context).colorScheme;
     return Dismissible(
       key: ValueKey('record-$id'),
       direction: hasContact && _canArchive
@@ -414,7 +566,10 @@ class _RecordListScreenState extends State<RecordListScreen> {
         children: [
           Icon(icon, color: color),
           const SizedBox(width: 8),
-          Text(label, style: TextStyle(color: color, fontWeight: FontWeight.w600)),
+          Text(
+            label,
+            style: TextStyle(color: color, fontWeight: FontWeight.w600),
+          ),
         ],
       ),
     );
@@ -424,96 +579,185 @@ class _RecordListScreenState extends State<RecordListScreen> {
   Future<bool> _archive(Map<String, dynamic> record) async {
     final id = record['id'] as int;
     try {
-      await widget.rpc.callKw(widget.model, 'action_archive', args: [[id]], context: widget.recordContext);
+      await widget.rpc.callKw(
+        widget.model,
+        'action_archive',
+        args: [
+          [id],
+        ],
+        context: widget.recordContext,
+      );
     } catch (e) {
       if (mounted) handleRpcError(context, e);
       return false;
     }
     if (!mounted) return true;
     setState(() {
-      _records = [for (final r in _records) if (r['id'] != id) r];
+      _records = [
+        for (final r in _records)
+          if (r['id'] != id) r,
+      ];
       if (_total != null) _total = _total! - 1;
     });
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-      content: Text('Archived ${record['display_name'] ?? ''}'),
-      action: SnackBarAction(
-        label: 'Undo',
-        onPressed: () async {
-          try {
-            await widget.rpc.callKw(widget.model, 'action_unarchive', args: [[id]], context: widget.recordContext);
-            _refresh();
-          } catch (e) {
-            if (mounted) handleRpcError(context, e);
-          }
-        },
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text('Archived ${record['display_name'] ?? ''}'),
+        action: SnackBarAction(
+          label: 'Undo',
+          onPressed: () async {
+            try {
+              await widget.rpc.callKw(
+                widget.model,
+                'action_unarchive',
+                args: [
+                  [id],
+                ],
+                context: widget.recordContext,
+              );
+              _refresh();
+            } catch (e) {
+              if (mounted) handleRpcError(context, e);
+            }
+          },
+        ),
       ),
-    ));
+    );
     return true;
   }
 
-  Widget _emptyState(ColorScheme scheme) {
+  Widget _emptyState() {
+    final c = AppColors.of(context);
+    final filtered = _query.isNotEmpty || _activeFilters.isNotEmpty;
     return ListView(
       children: [
         const SizedBox(height: 96),
-        Icon(Icons.inbox_outlined, size: 56, color: scheme.outlineVariant),
+        Icon(Icons.inbox_outlined, size: 56, color: c.border),
         const SizedBox(height: 12),
         Text(
-          _query.isNotEmpty || _activeFilters.isNotEmpty ? 'No records match' : 'No records yet',
+          filtered ? 'No records match' : 'No records yet',
           textAlign: TextAlign.center,
           style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
         ),
         const SizedBox(height: 4),
         Text(
-          _query.isNotEmpty || _activeFilters.isNotEmpty ? 'Try another search or filter.' : 'Tap New to create one.',
+          filtered ? 'Try another search or filter.' : (_canCreate ? 'Tap New to create one.' : ''),
           textAlign: TextAlign.center,
-          style: TextStyle(color: scheme.outline),
+          style: TextStyle(color: c.muted),
         ),
       ],
     );
   }
 
+  Widget _header() {
+    final c = AppColors.of(context);
+    final webPath = widget.webPath;
+    final hasDrawer = widget.drawer != null;
+    return Container(
+      decoration: BoxDecoration(
+        color: c.card,
+        border: Border(bottom: BorderSide(color: c.border)),
+      ),
+      padding: const EdgeInsets.only(bottom: 12),
+      child: SafeArea(
+        bottom: false,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(4, 6, 8, 6),
+              child: Row(
+                children: [
+                  Builder(
+                    builder: (ctx) => IconButton(
+                      tooltip: hasDrawer ? 'Menu' : 'Back',
+                      icon: Icon(hasDrawer ? Icons.menu : Icons.arrow_back),
+                      onPressed: () => hasDrawer ? Scaffold.of(ctx).openDrawer() : Navigator.of(ctx).maybePop(),
+                    ),
+                  ),
+                  const SizedBox(width: 4),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        if (widget.subtitle != null && widget.subtitle != widget.title)
+                          Text(widget.subtitle!, style: TextStyle(fontSize: 12, color: c.muted)),
+                        Text(
+                          widget.title,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w800),
+                        ),
+                      ],
+                    ),
+                  ),
+                  if (webPath != null)
+                    IconButton(
+                      tooltip: 'Open in web',
+                      icon: const Icon(Icons.open_in_browser),
+                      onPressed: () => Navigator.of(context).push(
+                        MaterialPageRoute(
+                          builder: (_) =>
+                              WebViewScreen(session: widget.rpc.session, path: webPath, title: widget.title),
+                        ),
+                      ),
+                    ),
+                ],
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              child: TextField(
+                decoration: InputDecoration(
+                  prefixIcon: const Icon(Icons.search),
+                  hintText: 'Search ${widget.title.toLowerCase()}',
+                  isDense: true,
+                  fillColor: c.ground,
+                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(24), borderSide: BorderSide.none),
+                  enabledBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(24),
+                    borderSide: BorderSide.none,
+                  ),
+                ),
+                textInputAction: TextInputAction.search,
+                onChanged: (q) {
+                  _debounce?.cancel();
+                  _debounce = Timer(const Duration(milliseconds: 400), () {
+                    _query = q.trim();
+                    _research();
+                  });
+                },
+              ),
+            ),
+            if (_filters.isNotEmpty) ...[const SizedBox(height: 12), _filterChips()],
+          ],
+        ),
+      ),
+    );
+  }
+
   Widget _body() {
     if (_error != null) {
-      return ErrorView.fromError(_error!, onRetry: () {
-        setState(() => _error = null);
-        _views == null ? _init() : _refresh();
-      });
+      return ErrorView.fromError(
+        _error!,
+        onRetry: () {
+          setState(() => _error = null);
+          _views == null ? _init() : _refresh();
+        },
+      );
     }
     if (_views == null) return const SkeletonCards();
 
+    final c = AppColors.of(context);
     final scheme = Theme.of(context).colorScheme;
+    final sections = _sections;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        Padding(
-          padding: const EdgeInsets.fromLTRB(16, 4, 16, 8),
-          child: TextField(
-            decoration: InputDecoration(
-              prefixIcon: const Icon(Icons.search),
-              hintText: 'Search ${widget.title.toLowerCase()}',
-              isDense: true,
-              border: OutlineInputBorder(borderRadius: BorderRadius.circular(28), borderSide: BorderSide.none),
-              enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(28), borderSide: BorderSide.none),
-            ),
-            textInputAction: TextInputAction.search,
-            onChanged: (q) {
-              _debounce?.cancel();
-              _debounce = Timer(const Duration(milliseconds: 400), () {
-                _query = q.trim();
-                _research();
-              });
-            },
-          ),
-        ),
-        if (_filters.isNotEmpty) _filterChips(),
         if (widget.domainIncomplete)
           Container(
-            margin: const EdgeInsets.fromLTRB(16, 4, 16, 0),
+            margin: const EdgeInsets.fromLTRB(16, 12, 16, 0),
             padding: const EdgeInsets.all(10),
-            decoration: BoxDecoration(
-              color: scheme.tertiaryContainer,
-              borderRadius: BorderRadius.circular(12),
-            ),
+            decoration: BoxDecoration(color: scheme.tertiaryContainer, borderRadius: BorderRadius.circular(12)),
             child: Text(
               "Part of this menu's filter can't be applied in the app, so it may show more records than the web version.",
               style: TextStyle(fontSize: 12, color: scheme.onTertiaryContainer),
@@ -521,27 +765,60 @@ class _RecordListScreenState extends State<RecordListScreen> {
           ),
         if (_total != null)
           Padding(
-            padding: const EdgeInsets.fromLTRB(20, 6, 20, 2),
-            child: Text(
-              _total == 1 ? '1 record' : '${formatNumber(_total!, decimals: 0)} records',
-              style: TextStyle(fontSize: 12, color: scheme.outline, fontWeight: FontWeight.w500),
+            padding: const EdgeInsets.fromLTRB(20, 14, 20, 2),
+            child: Text.rich(
+              TextSpan(
+                style: TextStyle(fontSize: 13, color: c.muted),
+                children: [
+                  TextSpan(text: _total == 1 ? '1 record' : '${formatNumber(_total!, decimals: 0)} records'),
+                  if (_sum != null && _total! > 0) ...[
+                    const TextSpan(text: ' · total '),
+                    TextSpan(
+                      text: formatNumber(_sum!),
+                      style: TextStyle(color: c.ink, fontWeight: FontWeight.w700),
+                    ),
+                  ],
+                ],
+              ),
             ),
           ),
         Expanded(
           child: RefreshIndicator(
             onRefresh: _refresh,
             child: _records.isEmpty
-                ? _emptyState(scheme)
+                ? _emptyState()
                 : ListView.builder(
                     controller: _scroll,
-                    padding: const EdgeInsets.only(top: 2, bottom: 96),
+                    padding: const EdgeInsets.only(top: 4, bottom: 96),
                     itemCount: _records.length + (_hasMore ? 1 : 0),
-                    itemBuilder: (_, i) => i < _records.length
-                        ? _card(_records[i])
-                        : const Padding(
-                            padding: EdgeInsets.all(16),
-                            child: Center(child: CircularProgressIndicator()),
+                    itemBuilder: (_, i) {
+                      if (i >= _records.length) {
+                        return const Padding(
+                          padding: EdgeInsets.all(16),
+                          child: Center(child: CircularProgressIndicator()),
+                        );
+                      }
+                      final section = sections[i];
+                      if (section == null) return _card(_records[i]);
+                      return Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          Padding(
+                            padding: const EdgeInsets.fromLTRB(20, 12, 20, 4),
+                            child: Text(
+                              section.toUpperCase(),
+                              style: TextStyle(
+                                fontSize: 12,
+                                fontWeight: FontWeight.w700,
+                                letterSpacing: 0.6,
+                                color: c.muted,
+                              ),
+                            ),
                           ),
+                          _card(_records[i]),
+                        ],
+                      );
+                    },
                   ),
           ),
         ),
@@ -551,21 +828,7 @@ class _RecordListScreenState extends State<RecordListScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final webPath = widget.webPath;
     return Scaffold(
-      appBar: AppBar(
-        title: Text(widget.title),
-        actions: [
-          if (webPath != null)
-            IconButton(
-              tooltip: 'Open in web',
-              icon: const Icon(Icons.open_in_browser),
-              onPressed: () => Navigator.of(context).push(MaterialPageRoute(
-                builder: (_) => WebViewScreen(session: widget.rpc.session, path: webPath, title: widget.title),
-              )),
-            ),
-        ],
-      ),
       drawer: widget.drawer,
       floatingActionButton: _views != null && _canCreate
           ? FloatingActionButton.extended(
@@ -574,7 +837,13 @@ class _RecordListScreenState extends State<RecordListScreen> {
               label: const Text('New'),
             )
           : null,
-      body: _body(),
+      body: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          _header(),
+          Expanded(child: _body()),
+        ],
+      ),
     );
   }
 }

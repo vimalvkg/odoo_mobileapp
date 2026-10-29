@@ -5,7 +5,9 @@ import '../odoo/expr.dart';
 import '../odoo/format.dart';
 import '../odoo/rpc.dart';
 import '../odoo/view_arch.dart';
+import '../theme.dart';
 import 'field_editor.dart';
+import 'record_avatar.dart';
 
 /// One line of a one2many field: saved ([id] set) or new, with local edits.
 class LineRecord {
@@ -141,6 +143,9 @@ class X2ManyLinesView extends StatelessWidget {
   final ValueChanged<LineRecord> onOpen;
   final ValueChanged<LineRecord> onRemove;
 
+  /// For product photos on lines; without it lines show initials.
+  final OdooRpc? rpc;
+
   const X2ManyLinesView({
     super.key,
     required this.lines,
@@ -151,122 +156,181 @@ class X2ManyLinesView extends StatelessWidget {
     required this.onAdd,
     required this.onOpen,
     required this.onRemove,
+    this.rpc,
   });
 
-  Widget _line(BuildContext context, LineRecord line, List<ArchField> columns) {
+  static const _qtyFields = ['product_uom_qty', 'quantity', 'product_qty', 'qty', 'unit_amount'];
+  static const _priceFields = ['price_unit', 'unit_price'];
+
+  num? _num(LineRecord line, String name) {
+    final v = line.value(name);
+    return v is num ? v : null;
+  }
+
+  /// "2 × 1,750.00 · 10% off" for product lines, else the other columns.
+  String _summary(LineRecord line, List<ArchField> columns, Set<ArchField> used) {
+    final names = {for (final c in columns) c.name};
+    final qtyName = _qtyFields.where(names.contains).firstOrNull;
+    final priceName = _priceFields.where(names.contains).firstOrNull;
+    final qty = qtyName == null ? null : _num(line, qtyName);
+    final price = priceName == null ? null : _num(line, priceName);
+    if (qty != null && price != null) {
+      final discount = _num(line, 'discount') ?? 0;
+      final q = qty == qty.truncate() ? qty.toInt().toString() : formatNumber(qty);
+      return '$q × ${formatNumber(price)}${discount != 0 ? ' · ${formatNumber(discount, decimals: discount == discount.truncate() ? 0 : 2)}% off' : ''}';
+    }
+    return [
+      for (final c in columns)
+        if (!used.contains(c) && c.name != 'name')
+          // Zero and empty values (e.g. "Disc.%: 0.00") are noise.
+          if (formatFieldValue(line.value(c.name), lines.fields[c.name]!) case final v
+              when v.isNotEmpty && v != 'No' && line.value(c.name) != 0)
+            '${_labelOf(c, lines.fields[c.name])}: $v',
+    ].join('  ·  ');
+  }
+
+  Widget _line(BuildContext context, LineRecord line, List<ArchField> columns, bool first) {
+    final c = AppColors.of(context);
     final scheme = Theme.of(context).colorScheme;
     if (line.isSection || line.isNote) {
       final text = line.value('name')?.toString() ?? line.value('display_name')?.toString() ?? '';
-      return Padding(
-        padding: const EdgeInsets.fromLTRB(4, 14, 4, 6),
-        child: Text(
-          text,
-          style: line.isSection
-              ? const TextStyle(fontWeight: FontWeight.w700, fontSize: 15)
-              : TextStyle(fontStyle: FontStyle.italic, color: scheme.onSurfaceVariant),
+      return InkWell(
+        onTap: () => onOpen(line),
+        child: Padding(
+          padding: EdgeInsets.fromLTRB(0, first ? 6 : 14, 0, 6),
+          child: Text(
+            line.isSection ? text.toUpperCase() : text,
+            style: line.isSection
+                ? TextStyle(fontWeight: FontWeight.w700, fontSize: 12, letterSpacing: 0.6, color: c.muted)
+                : TextStyle(fontStyle: FontStyle.italic, color: c.muted),
+          ),
         ),
       );
     }
 
     ArchField? titleCol;
     ArchField? amountCol;
-    for (final c in columns) {
-      final type = lines.fields[c.name]!['type'];
-      if (titleCol == null && (type == 'many2one' || type == 'char' || type == 'text')) titleCol = c;
-      if (type == 'monetary') amountCol = c;
+    for (final col in columns) {
+      final type = lines.fields[col.name]!['type'];
+      if (titleCol == null && (type == 'many2one' || type == 'char' || type == 'text')) titleCol = col;
+      if (type == 'monetary') amountCol = col;
     }
     final title = titleCol == null ? '' : formatFieldValue(line.value(titleCol.name), lines.fields[titleCol.name]!);
     final amount = amountCol == null ? '' : formatFieldValue(line.value(amountCol.name), lines.fields[amountCol.name]!);
-    final details = [
-      for (final c in columns)
-        if (c != titleCol && c != amountCol && c.name != 'name')
-          // Zero and empty values (e.g. "Disc.%: 0.00") are noise on a card.
-          if (formatFieldValue(line.value(c.name), lines.fields[c.name]!) case final v
-              when v.isNotEmpty && v != 'No' && line.value(c.name) != 0)
-            '${_labelOf(c, lines.fields[c.name])}: $v',
-    ];
+    final summary = _summary(line, columns, {?titleCol, ?amountCol});
+    final pending = line.id == null || line.changes.isNotEmpty;
+    final display = title.isEmpty ? (line.value('display_name')?.toString() ?? 'New line') : title;
 
-    final card = Container(
-      margin: const EdgeInsets.symmetric(vertical: 4),
-      decoration: BoxDecoration(
-        color: line.id == null || line.changes.isNotEmpty
-            ? scheme.primaryContainer.withValues(alpha: 0.35)
-            : scheme.surfaceContainerLow,
-        borderRadius: BorderRadius.circular(12),
-      ),
-      child: InkWell(
-        borderRadius: BorderRadius.circular(12),
-        onTap: () => onOpen(line),
-        child: Padding(
-          padding: const EdgeInsets.all(12),
-          child: Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      title.isEmpty ? (line.value('display_name')?.toString() ?? 'New line') : title,
-                      style: const TextStyle(fontWeight: FontWeight.w600),
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                    if (details.isNotEmpty) ...[
-                      const SizedBox(height: 4),
-                      Text(details.join('  ·  '), style: TextStyle(fontSize: 12, color: scheme.onSurfaceVariant)),
-                    ],
+    // Product photo when the line's title is a product.
+    final product = titleCol == null ? null : line.value(titleCol.name);
+    final relation = titleCol == null ? null : lines.fields[titleCol.name]!['relation'];
+    final productId = product is List && product.isNotEmpty && product.first is int ? product.first as int : null;
+    final avatar = rpc != null && relation is String && relation.startsWith('product.')
+        ? RecordAvatar(
+            rpc: rpc!,
+            model: relation,
+            id: productId,
+            imageField: 'image_128',
+            text: display,
+            size: 44,
+            circle: false,
+          )
+        : null;
+
+    final row = InkWell(
+      onTap: () => onOpen(line),
+      child: Container(
+        padding: const EdgeInsets.symmetric(vertical: 10),
+        decoration: BoxDecoration(
+          border: first ? null : Border(top: BorderSide(color: c.border)),
+        ),
+        child: Row(
+          children: [
+            if (avatar != null) ...[avatar, const SizedBox(width: 12)],
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    display,
+                    style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 14),
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  if (summary.isNotEmpty) ...[
+                    const SizedBox(height: 2),
+                    Text(summary, style: TextStyle(fontSize: 12, color: c.muted)),
                   ],
-                ),
+                  if (pending)
+                    Padding(
+                      padding: const EdgeInsets.only(top: 2),
+                      child: Text(
+                        'Not saved yet',
+                        style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: scheme.primary),
+                      ),
+                    ),
+                ],
               ),
-              const SizedBox(width: 8),
-              Text(
-                amount.isEmpty && (line.id == null || line.changes.isNotEmpty) ? '—' : amount,
-                style: const TextStyle(fontWeight: FontWeight.w700),
-              ),
-            ],
-          ),
+            ),
+            const SizedBox(width: 8),
+            Text(amount.isEmpty || pending ? '—' : amount, style: const TextStyle(fontWeight: FontWeight.w700)),
+          ],
         ),
       ),
     );
-    if (!editing || readonly || !lines.canDelete) return card;
+    if (!editing || readonly || !lines.canDelete) return row;
     return Dismissible(
       key: ValueKey(line.key),
       direction: DismissDirection.endToStart,
       background: Container(
         alignment: Alignment.centerRight,
         padding: const EdgeInsets.only(right: 20),
-        decoration: BoxDecoration(color: scheme.errorContainer, borderRadius: BorderRadius.circular(12)),
+        color: scheme.errorContainer,
         child: Icon(Icons.delete_outline, color: scheme.onErrorContainer),
       ),
       onDismissed: (_) {
         HapticFeedback.mediumImpact();
         onRemove(line);
       },
-      child: card,
+      child: row,
     );
   }
 
   @override
   Widget build(BuildContext context) {
     final columns = [
-      for (final c in lines.columns)
-        if (lines.columnVisible(c, parentEnv)) c,
+      for (final col in lines.columns)
+        if (lines.columnVisible(col, parentEnv)) col,
     ];
-    final scheme = Theme.of(context).colorScheme;
+    final c = AppColors.of(context);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         if (lines.items.isEmpty)
           Padding(
-            padding: const EdgeInsets.symmetric(vertical: 8),
-            child: Text('No lines yet', style: TextStyle(color: scheme.outline)),
+            padding: const EdgeInsets.symmetric(vertical: 10),
+            child: Text('No lines yet', style: TextStyle(color: c.muted)),
           ),
-        for (final line in lines.items) _line(context, line, columns),
+        for (var i = 0; i < lines.items.length; i++) _line(context, lines.items[i], columns, i == 0),
         if (!readonly && lines.canCreate)
-          Align(
-            alignment: Alignment.centerLeft,
-            child: TextButton.icon(onPressed: onAdd, icon: const Icon(Icons.add), label: Text(addLabel)),
+          InkWell(
+            onTap: onAdd,
+            child: Container(
+              padding: const EdgeInsets.symmetric(vertical: 12),
+              decoration: BoxDecoration(
+                border: Border(top: BorderSide(color: c.border)),
+              ),
+              child: Row(
+                children: [
+                  Icon(Icons.add, size: 20, color: Theme.of(context).colorScheme.primary),
+                  const SizedBox(width: 8),
+                  Text(
+                    addLabel,
+                    style: TextStyle(fontWeight: FontWeight.w600, color: Theme.of(context).colorScheme.primary),
+                  ),
+                ],
+              ),
+            ),
           ),
       ],
     );

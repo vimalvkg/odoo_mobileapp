@@ -4,6 +4,7 @@ import 'package:flutter/services.dart';
 import '../app_navigation.dart';
 import '../odoo/format.dart';
 import '../odoo/rpc.dart';
+import '../theme.dart';
 import '../widgets/error_view.dart';
 import '../widgets/skeleton.dart';
 import 'record_form_screen.dart';
@@ -26,6 +27,9 @@ class ActivitiesScreenState extends State<ActivitiesScreen> {
   List<Map<String, dynamic>>? _activities;
   Object? _error;
 
+  /// Today tab (overdue + due today) or Upcoming tab.
+  bool _upcoming = false;
+
   @override
   void initState() {
     super.initState();
@@ -39,7 +43,7 @@ class ActivitiesScreenState extends State<ActivitiesScreen> {
         domain: [
           ['user_id', '=', widget.rpc.uid],
         ],
-        fields: ['res_model', 'res_id', 'res_name', 'activity_type_id', 'summary', 'date_deadline', 'state'],
+        fields: ['res_model', 'res_id', 'res_name', 'activity_type_id', 'summary', 'date_deadline', 'state', 'icon'],
         order: 'date_deadline asc, id asc',
         limit: 300,
       );
@@ -65,11 +69,20 @@ class ActivitiesScreenState extends State<ActivitiesScreen> {
   Future<void> _markDone(Map<String, dynamic> activity) async {
     HapticFeedback.mediumImpact();
     final id = activity['id'] as int;
-    setState(() => _activities = [for (final a in _activities!) if (a['id'] != id) a]);
+    setState(
+      () => _activities = [
+        for (final a in _activities!)
+          if (a['id'] != id) a,
+      ],
+    );
     try {
-      await widget.rpc.callKw('mail.activity', 'action_feedback', args: [
-        [id],
-      ]);
+      await widget.rpc.callKw(
+        'mail.activity',
+        'action_feedback',
+        args: [
+          [id],
+        ],
+      );
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Activity marked as done')));
       }
@@ -84,14 +97,16 @@ class ActivitiesScreenState extends State<ActivitiesScreen> {
     final id = activity['res_id'];
     if (model is! String || id is! int) return;
     Navigator.of(context)
-        .push(MaterialPageRoute(
-          builder: (_) => RecordFormScreen(
-            rpc: widget.rpc,
-            model: model,
-            recordId: id,
-            title: activity['res_name']?.toString() ?? '',
+        .push(
+          MaterialPageRoute(
+            builder: (_) => RecordFormScreen(
+              rpc: widget.rpc,
+              model: model,
+              recordId: id,
+              title: activity['res_name']?.toString() ?? '',
+            ),
           ),
-        ))
+        )
         .then((_) => reload());
   }
 
@@ -108,10 +123,22 @@ class ActivitiesScreenState extends State<ActivitiesScreen> {
     return formatDate(d);
   }
 
+  /// Activity type icon, from the type's Font Awesome icon in Odoo.
+  static IconData _iconOf(dynamic fa) {
+    final name = fa is String ? fa : '';
+    if (name.contains('phone')) return Icons.call_outlined;
+    if (name.contains('envelope')) return Icons.mail_outline;
+    if (name.contains('users') || name.contains('calendar')) return Icons.groups_outlined;
+    if (name.contains('upload')) return Icons.upload_file_outlined;
+    if (name.contains('file') || name.contains('pencil')) return Icons.description_outlined;
+    return Icons.task_alt;
+  }
+
   Widget _tile(Map<String, dynamic> a, Color accent) {
-    final scheme = Theme.of(context).colorScheme;
+    final c = AppColors.of(context);
     final type = a['activity_type_id'] is List ? (a['activity_type_id'] as List)[1].toString() : 'Activity';
     final summary = a['summary'] is String && (a['summary'] as String).isNotEmpty ? a['summary'] as String : type;
+    const green = Color(0xFF1E7A3A);
     return Dismissible(
       key: ValueKey('activity-${a['id']}'),
       direction: DismissDirection.startToEnd,
@@ -119,16 +146,16 @@ class ActivitiesScreenState extends State<ActivitiesScreen> {
         margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 5),
         padding: const EdgeInsets.symmetric(horizontal: 24),
         alignment: Alignment.centerLeft,
-        decoration: BoxDecoration(
-          color: const Color(0xFF2E9D5B).withValues(alpha: 0.15),
-          borderRadius: BorderRadius.circular(16),
-        ),
+        decoration: BoxDecoration(color: green.withValues(alpha: 0.15), borderRadius: BorderRadius.circular(18)),
         child: const Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(Icons.check_circle_outline, color: Color(0xFF2E9D5B)),
+            Icon(Icons.check, color: green),
             SizedBox(width: 8),
-            Text('Done', style: TextStyle(color: Color(0xFF2E9D5B), fontWeight: FontWeight.w600)),
+            Text(
+              'Done',
+              style: TextStyle(color: green, fontWeight: FontWeight.w600),
+            ),
           ],
         ),
       ),
@@ -140,16 +167,20 @@ class ActivitiesScreenState extends State<ActivitiesScreen> {
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 5),
         child: Card(
           child: InkWell(
-            borderRadius: BorderRadius.circular(16),
+            borderRadius: BorderRadius.circular(18),
             onTap: () => _open(a),
             child: Padding(
-              padding: const EdgeInsets.fromLTRB(14, 12, 6, 12),
+              padding: const EdgeInsets.fromLTRB(14, 12, 10, 12),
               child: Row(
                 children: [
                   Container(
-                    width: 4,
-                    height: 40,
-                    decoration: BoxDecoration(color: accent, borderRadius: BorderRadius.circular(2)),
+                    width: 44,
+                    height: 44,
+                    decoration: BoxDecoration(
+                      color: accent.withValues(alpha: 0.13),
+                      borderRadius: BorderRadius.circular(14),
+                    ),
+                    child: Icon(_iconOf(a['icon']), color: accent, size: 22),
                   ),
                   const SizedBox(width: 12),
                   Expanded(
@@ -157,14 +188,17 @@ class ActivitiesScreenState extends State<ActivitiesScreen> {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(summary, style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 15)),
-                        const SizedBox(height: 3),
+                        const SizedBox(height: 2),
                         Text(
-                          [a['res_name']?.toString() ?? '', if (summary != type) type].where((s) => s.isNotEmpty).join(' · '),
+                          [
+                            if (summary != type) type,
+                            a['res_name']?.toString() ?? '',
+                          ].where((s) => s.isNotEmpty).join(' · '),
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
-                          style: TextStyle(fontSize: 13, color: scheme.onSurfaceVariant),
+                          style: TextStyle(fontSize: 13, color: c.muted),
                         ),
-                        const SizedBox(height: 3),
+                        const SizedBox(height: 2),
                         Text(
                           _when(a['date_deadline']),
                           style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: accent),
@@ -172,9 +206,13 @@ class ActivitiesScreenState extends State<ActivitiesScreen> {
                       ],
                     ),
                   ),
-                  IconButton(
+                  IconButton.outlined(
                     tooltip: 'Mark as done',
-                    icon: Icon(Icons.check_circle_outline, color: scheme.outline),
+                    style: IconButton.styleFrom(
+                      side: BorderSide(color: c.border),
+                      fixedSize: const Size(44, 44),
+                    ),
+                    icon: Icon(Icons.check, color: c.muted),
                     onPressed: () => _markDone(a),
                   ),
                 ],
@@ -186,81 +224,159 @@ class ActivitiesScreenState extends State<ActivitiesScreen> {
     );
   }
 
+  Widget _segment(String label, bool selected, int count, Color badge, VoidCallback onTap) {
+    final c = AppColors.of(context);
+    return Expanded(
+      child: Material(
+        color: selected ? c.card : Colors.transparent,
+        borderRadius: BorderRadius.circular(11),
+        child: InkWell(
+          borderRadius: BorderRadius.circular(11),
+          onTap: onTap,
+          child: SizedBox(
+            height: 38,
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Text(
+                  label,
+                  style: TextStyle(
+                    fontSize: 14,
+                    fontWeight: selected ? FontWeight.w600 : FontWeight.w500,
+                    color: selected ? c.ink : c.muted,
+                  ),
+                ),
+                if (count > 0) ...[
+                  const SizedBox(width: 6),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 1),
+                    decoration: BoxDecoration(color: badge, borderRadius: BorderRadius.circular(9)),
+                    child: Text(
+                      '$count',
+                      style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: Colors.white),
+                    ),
+                  ),
+                ],
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
+    final c = AppColors.of(context);
     final activities = _activities;
+    const red = Color(0xFFB3261E);
+    const amber = Color(0xFF9A5B00);
+    final scheme = Theme.of(context).colorScheme;
+    final due = activities?.where((a) => a['state'] == 'overdue' || a['state'] == 'today').length ?? 0;
+    final upcoming = (activities?.length ?? 0) - due;
+
     final Widget body;
     if (_error != null) {
-      body = ErrorView.fromError(_error!, onRetry: () {
-        setState(() => _error = null);
-        reload();
-      });
+      body = ErrorView.fromError(
+        _error!,
+        onRetry: () {
+          setState(() => _error = null);
+          reload();
+        },
+      );
     } else if (activities == null) {
       body = const SkeletonCards();
-    } else if (activities.isEmpty) {
-      body = RefreshIndicator(
-        onRefresh: reload,
-        child: ListView(
-          children: [
-            const SizedBox(height: 120),
-            Icon(Icons.task_alt, size: 64, color: scheme.primary.withValues(alpha: 0.5)),
-            const SizedBox(height: 12),
-            const Text(
-              "You're all caught up",
-              textAlign: TextAlign.center,
-              style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600),
-            ),
-            const SizedBox(height: 4),
-            Text('No activities assigned to you.', textAlign: TextAlign.center, style: TextStyle(color: scheme.outline)),
-          ],
-        ),
-      );
     } else {
-      const red = Color(0xFFD14343);
-      const amber = Color(0xFFC77C0E);
-      const green = Color(0xFF2E9D5B);
-      final groups = [
-        ('Overdue', red, activities.where((a) => a['state'] == 'overdue').toList()),
-        ('Today', amber, activities.where((a) => a['state'] == 'today').toList()),
-        ('Upcoming', green, activities.where((a) => a['state'] != 'overdue' && a['state'] != 'today').toList()),
-      ];
+      final groups = _upcoming
+          ? [
+              (
+                'Upcoming',
+                scheme.primary,
+                activities.where((a) => a['state'] != 'overdue' && a['state'] != 'today').toList(),
+              ),
+            ]
+          : [
+              ('Overdue', red, activities.where((a) => a['state'] == 'overdue').toList()),
+              ('Today', amber, activities.where((a) => a['state'] == 'today').toList()),
+            ];
+      final empty = groups.every((g) => g.$3.isEmpty);
       body = RefreshIndicator(
         onRefresh: reload,
         child: ListView(
           padding: const EdgeInsets.only(bottom: 24),
           children: [
+            if (empty) ...[
+              const SizedBox(height: 80),
+              Icon(Icons.task_alt, size: 64, color: scheme.primary.withValues(alpha: 0.5)),
+              const SizedBox(height: 12),
+              Text(
+                _upcoming ? 'Nothing planned' : "You're all caught up",
+                textAlign: TextAlign.center,
+                style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w600),
+              ),
+              const SizedBox(height: 4),
+              Text(
+                _upcoming ? 'No upcoming activities.' : 'Nothing overdue or due today.',
+                textAlign: TextAlign.center,
+                style: TextStyle(color: c.muted),
+              ),
+            ],
             for (final (label, color, items) in groups)
               if (items.isNotEmpty) ...[
                 Padding(
                   padding: const EdgeInsets.fromLTRB(20, 16, 20, 6),
-                  child: Row(
-                    children: [
-                      Text(label, style: TextStyle(fontWeight: FontWeight.w700, color: color)),
-                      const SizedBox(width: 8),
-                      Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 1),
-                        decoration: BoxDecoration(
-                          color: color.withValues(alpha: 0.14),
-                          borderRadius: BorderRadius.circular(10),
-                        ),
-                        child: Text(
-                          '${items.length}',
-                          style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: color),
-                        ),
-                      ),
-                    ],
+                  child: Text(
+                    label.toUpperCase(),
+                    style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700, letterSpacing: 0.6, color: color),
                   ),
                 ),
                 for (final a in items) _tile(a, color),
               ],
+            if (!empty)
+              Padding(
+                padding: const EdgeInsets.only(top: 10),
+                child: Text(
+                  'Swipe right to mark done · tap to open the record',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(fontSize: 12, color: c.muted),
+                ),
+              ),
           ],
         ),
       );
     }
+
     return Scaffold(
-      appBar: AppBar(title: const Text('My Activities')),
-      body: body,
+      body: SafeArea(
+        bottom: false,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            const Padding(
+              padding: EdgeInsets.fromLTRB(20, 16, 20, 14),
+              child: Text(
+                'My activities',
+                style: TextStyle(fontSize: 26, fontWeight: FontWeight.w800, letterSpacing: -0.4),
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              child: Container(
+                padding: const EdgeInsets.all(4),
+                decoration: BoxDecoration(color: c.soft, borderRadius: BorderRadius.circular(14)),
+                child: Row(
+                  children: [
+                    _segment('Today', !_upcoming, due, red, () => setState(() => _upcoming = false)),
+                    _segment('Upcoming', _upcoming, upcoming, scheme.primary, () => setState(() => _upcoming = true)),
+                  ],
+                ),
+              ),
+            ),
+            const SizedBox(height: 4),
+            Expanded(child: body),
+          ],
+        ),
+      ),
     );
   }
 }

@@ -24,7 +24,11 @@ Future<void> endSession({String? notice, Session? destroy}) async {
       unawaited(OdooClient.destroySession(serverUrl: destroy.serverUrl, sessionId: destroy.sessionId));
     }
     await SessionStore.clear();
-    await WebViewCookieManager().clearCookies();
+    try {
+      await WebViewCookieManager().clearCookies();
+    } catch (_) {
+      // No web view on this platform; nothing to clear.
+    }
     navigatorKey.currentState?.pushAndRemoveUntil(
       MaterialPageRoute(builder: (_) => LoginScreen(notice: notice)),
       (_) => false,

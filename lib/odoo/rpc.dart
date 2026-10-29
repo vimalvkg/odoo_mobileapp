@@ -246,6 +246,11 @@ class OdooRpc {
     });
   }
 
+  static List<Map<String, dynamic>> _rows(dynamic result) {
+    if (result is! List) throw const OdooException('Unexpected response from the server.');
+    return [for (final r in result) if (r is Map) Map<String, dynamic>.from(r)];
+  }
+
   Future<List<Map<String, dynamic>>> searchRead(
     String model, {
     List<dynamic> domain = const [],
@@ -264,12 +269,26 @@ class OdooRpc {
           'order': ?order,
         },
         context: context);
-    return [for (final r in result as List) Map<String, dynamic>.from(r as Map)];
+    return _rows(result);
   }
 
   Future<List<Map<String, dynamic>>> read(String model, List<int> ids, List<String> fields,
       {Map<String, dynamic>? context}) async {
     final result = await callKw(model, 'read', args: [ids], kwargs: {'fields': fields}, context: context);
-    return [for (final r in result as List) Map<String, dynamic>.from(r as Map)];
+    return _rows(result);
+  }
+}
+
+/// Runs two requests in parallel like `(a, b).wait`, but rethrows the first
+/// failure itself (not a `ParallelWaitError`), so callers still see an
+/// [OdooException] — e.g. to notice an expired session.
+extension BothOrFirstError<A, B> on (Future<A>, Future<B>) {
+  Future<(A, B)> get both async {
+    try {
+      return await wait;
+    } on ParallelWaitError<(A?, B?), (AsyncError?, AsyncError?)> catch (e) {
+      final first = e.errors.$1 ?? e.errors.$2;
+      Error.throwWithStackTrace(first!.error, first.stackTrace);
+    }
   }
 }

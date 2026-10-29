@@ -107,8 +107,7 @@ class _LoginScreenState extends State<LoginScreen> {
         child: ListView(
           shrinkWrap: true,
           children: [
-            for (final db in databases)
-              ListTile(title: Text(db), onTap: () => Navigator.of(sheetContext).pop(db)),
+            for (final db in databases) ListTile(title: Text(db), onTap: () => Navigator.of(sheetContext).pop(db)),
           ],
         ),
       ),
@@ -133,12 +132,7 @@ class _LoginScreenState extends State<LoginScreen> {
     });
 
     final serverUrl = normalizeServerUrl(server);
-    final result = await OdooClient.authenticate(
-      serverUrl: serverUrl,
-      db: db,
-      login: login,
-      password: password,
-    );
+    final result = await OdooClient.authenticate(serverUrl: serverUrl, db: db, login: login, password: password);
 
     if (!mounted) return;
 
@@ -154,160 +148,168 @@ class _LoginScreenState extends State<LoginScreen> {
     await SessionStore.save(session);
 
     if (!mounted) return;
-    Navigator.of(context).pushReplacement(
-      MaterialPageRoute(builder: (_) => HomeScreen(session: session)),
-    );
+    Navigator.of(context).pushReplacement(MaterialPageRoute(builder: (_) => HomeScreen(session: session)));
   }
 
   Widget _banner(IconData icon, String text, Color bg, Color fg) {
     return Container(
-      margin: const EdgeInsets.only(bottom: 16),
       padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(color: bg, borderRadius: BorderRadius.circular(12)),
+      decoration: BoxDecoration(color: bg, borderRadius: BorderRadius.circular(14)),
       child: Row(
         children: [
           Icon(icon, size: 18, color: fg),
           const SizedBox(width: 8),
-          Expanded(child: Text(text, style: TextStyle(fontSize: 13, color: fg))),
+          Expanded(
+            child: Text(text, style: TextStyle(fontSize: 13, color: fg)),
+          ),
         ],
       ),
+    );
+  }
+
+  /// A label above a filled input, as in the design.
+  Widget _field(
+    String label,
+    TextEditingController controller,
+    IconData icon, {
+    String? hint,
+    Widget? suffix,
+    bool obscure = false,
+    TextInputType? keyboard,
+    TextInputAction action = TextInputAction.next,
+    Iterable<String>? autofill,
+    ValueChanged<String>? onSubmitted,
+  }) {
+    final c = AppColors.of(context);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Text(
+          label,
+          style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: c.muted),
+        ),
+        const SizedBox(height: 6),
+        TextField(
+          controller: controller,
+          obscureText: obscure,
+          keyboardType: keyboard,
+          textInputAction: action,
+          autocorrect: false,
+          autofillHints: autofill,
+          onSubmitted: onSubmitted,
+          decoration: InputDecoration(
+            hintText: hint,
+            prefixIcon: Icon(icon, color: c.muted),
+            suffixIcon: suffix,
+          ),
+        ),
+      ],
     );
   }
 
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
-    final top = MediaQuery.paddingOf(context).top;
+    final c = AppColors.of(context);
     return Scaffold(
-      body: SingleChildScrollView(
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Container(
-              padding: EdgeInsets.fromLTRB(28, top + 48, 28, 72),
-              decoration: BoxDecoration(
-                gradient: LinearGradient(
-                  begin: Alignment.topLeft,
-                  end: Alignment.bottomRight,
-                  colors: [brandOf(context), Color.lerp(brandOf(context), Colors.black, 0.35)!],
+      backgroundColor: c.card,
+      body: SafeArea(
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.fromLTRB(24, 40, 24, 24),
+          child: AutofillGroup(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Center(child: BrandMark(size: 64, onBrand: false, logoUrl: _logoUrl)),
+                const SizedBox(height: 18),
+                Text(
+                  'Welcome back',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(fontSize: 26, fontWeight: FontWeight.w800, letterSpacing: -0.4, color: c.ink),
                 ),
-              ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  BrandMark(size: 56, logoUrl: _logoUrl),
-                  const SizedBox(height: 20),
-                  const Text(
-                    'Welcome',
-                    style: TextStyle(fontSize: 26, fontWeight: FontWeight.w700, color: Colors.white),
-                  ),
-                  const SizedBox(height: 6),
-                  Text(
-                    'Sign in to your Odoo database',
-                    style: TextStyle(fontSize: 15, color: Colors.white.withValues(alpha: 0.8)),
-                  ),
+                const SizedBox(height: 6),
+                Text(
+                  'Sign in to your Odoo database',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(fontSize: 14, color: c.muted),
+                ),
+                const SizedBox(height: 28),
+                if (widget.notice != null) ...[
+                  _banner(Icons.info_outline, widget.notice!, scheme.secondaryContainer, scheme.onSecondaryContainer),
+                  const SizedBox(height: 16),
                 ],
-              ),
-            ),
-            Transform.translate(
-              offset: const Offset(0, -40),
-              child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 16),
-                child: Card(
-                  child: Padding(
-                    padding: const EdgeInsets.all(20),
-                    child: AutofillGroup(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.stretch,
-                        children: [
-                          if (widget.notice != null)
-                            _banner(Icons.info_outline, widget.notice!, scheme.secondaryContainer,
-                                scheme.onSecondaryContainer),
-                          TextField(
-                            controller: _serverCtrl,
-                            keyboardType: TextInputType.url,
-                            textInputAction: TextInputAction.next,
-                            autocorrect: false,
-                            decoration: const InputDecoration(
-                              labelText: 'Server',
-                              hintText: 'mycompany.odoo.com',
-                              prefixIcon: Icon(Icons.dns_outlined),
-                            ),
-                          ),
-                          const SizedBox(height: 14),
-                          TextField(
-                            controller: _dbCtrl,
-                            textInputAction: TextInputAction.next,
-                            autocorrect: false,
-                            decoration: InputDecoration(
-                              labelText: 'Database',
-                              prefixIcon: const Icon(Icons.storage_outlined),
-                              suffixIcon: IconButton(
-                                icon: const Icon(Icons.list_alt_outlined),
-                                tooltip: 'Choose from server',
-                                onPressed: _loading ? null : _pickDatabase,
-                              ),
-                            ),
-                          ),
-                          const SizedBox(height: 14),
-                          TextField(
-                            controller: _loginCtrl,
-                            keyboardType: TextInputType.emailAddress,
-                            textInputAction: TextInputAction.next,
-                            autocorrect: false,
-                            autofillHints: const [AutofillHints.username],
-                            decoration: const InputDecoration(
-                              labelText: 'Username',
-                              prefixIcon: Icon(Icons.person_outline),
-                            ),
-                          ),
-                          const SizedBox(height: 14),
-                          TextField(
-                            controller: _passwordCtrl,
-                            obscureText: _obscurePassword,
-                            textInputAction: TextInputAction.done,
-                            autofillHints: const [AutofillHints.password],
-                            decoration: InputDecoration(
-                              labelText: 'Password',
-                              prefixIcon: const Icon(Icons.lock_outline),
-                              suffixIcon: IconButton(
-                                icon: Icon(_obscurePassword ? Icons.visibility_outlined : Icons.visibility_off_outlined),
-                                tooltip: _obscurePassword ? 'Show password' : 'Hide password',
-                                onPressed: () => setState(() => _obscurePassword = !_obscurePassword),
-                              ),
-                            ),
-                            onSubmitted: (_) => _submit(),
-                          ),
-                          if (_errorText != null) ...[
-                            const SizedBox(height: 14),
-                            _banner(Icons.error_outline, _errorText!, scheme.errorContainer, scheme.onErrorContainer),
-                          ] else
-                            const SizedBox(height: 20),
-                          FilledButton(
-                            onPressed: _loading ? null : _submit,
-                            style: FilledButton.styleFrom(minimumSize: const Size.fromHeight(52)),
-                            child: _loading
-                                ? const SizedBox(
-                                    width: 20,
-                                    height: 20,
-                                    child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
-                                  )
-                                : const Text('Sign in'),
-                          ),
-                        ],
-                      ),
-                    ),
+                _field(
+                  'Server',
+                  _serverCtrl,
+                  Icons.dns_outlined,
+                  hint: 'erp.yourcompany.com',
+                  keyboard: TextInputType.url,
+                ),
+                const SizedBox(height: 14),
+                _field(
+                  'Database',
+                  _dbCtrl,
+                  Icons.storage_outlined,
+                  suffix: IconButton(
+                    icon: const Icon(Icons.expand_more),
+                    tooltip: 'Choose from server',
+                    onPressed: _loading ? null : _pickDatabase,
                   ),
                 ),
-              ),
+                const SizedBox(height: 14),
+                _field(
+                  'Email or username',
+                  _loginCtrl,
+                  Icons.person_outline,
+                  hint: 'you@company.com',
+                  keyboard: TextInputType.emailAddress,
+                  autofill: const [AutofillHints.username],
+                ),
+                const SizedBox(height: 14),
+                _field(
+                  'Password',
+                  _passwordCtrl,
+                  Icons.lock_outline,
+                  obscure: _obscurePassword,
+                  action: TextInputAction.done,
+                  autofill: const [AutofillHints.password],
+                  onSubmitted: (_) => _submit(),
+                  suffix: IconButton(
+                    icon: Icon(_obscurePassword ? Icons.visibility_outlined : Icons.visibility_off_outlined),
+                    tooltip: _obscurePassword ? 'Show password' : 'Hide password',
+                    onPressed: () => setState(() => _obscurePassword = !_obscurePassword),
+                  ),
+                ),
+                const SizedBox(height: 20),
+                if (_errorText != null) ...[
+                  _banner(Icons.error_outline, _errorText!, scheme.errorContainer, scheme.onErrorContainer),
+                  const SizedBox(height: 16),
+                ],
+                FilledButton(
+                  onPressed: _loading ? null : _submit,
+                  style: FilledButton.styleFrom(
+                    minimumSize: const Size.fromHeight(54),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                    textStyle: Theme.of(context).textTheme.labelLarge
+                        ?.copyWith(fontSize: 16, fontWeight: FontWeight.w600),
+                  ),
+                  child: _loading
+                      ? SizedBox(
+                          width: 20,
+                          height: 20,
+                          child: CircularProgressIndicator(strokeWidth: 2, color: scheme.onPrimary),
+                        )
+                      : const Text('Sign in'),
+                ),
+                const SizedBox(height: 28),
+                Text(
+                  'Works with any Odoo 19 Community database',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(fontSize: 12, color: c.muted),
+                ),
+              ],
             ),
-            Text(
-              'Works with any Odoo 19 Community database',
-              textAlign: TextAlign.center,
-              style: TextStyle(fontSize: 12, color: scheme.outline),
-            ),
-            const SizedBox(height: 24),
-          ],
+          ),
         ),
       ),
     );

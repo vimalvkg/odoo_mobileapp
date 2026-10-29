@@ -47,6 +47,7 @@ class OdooImage extends StatelessWidget {
   }
 }
 
+/// Initials on a soft tinted tile (or circle), coloured per name.
 class LetterAvatar extends StatelessWidget {
   final String text;
   final double size;
@@ -56,23 +57,19 @@ class LetterAvatar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final color = colorFor(text);
+    final (bg, fg) = softColorsFor(text, Theme.of(context).brightness);
     return Container(
       width: size,
       height: size,
       alignment: Alignment.center,
       decoration: BoxDecoration(
-        gradient: LinearGradient(
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-          colors: [Color.lerp(color, Colors.white, 0.15)!, color],
-        ),
+        color: bg,
         shape: circle ? BoxShape.circle : BoxShape.rectangle,
-        borderRadius: circle ? null : BorderRadius.circular(size / 4),
+        borderRadius: circle ? null : BorderRadius.circular(size * 0.3),
       ),
       child: Text(
-        text.trim().isEmpty ? '?' : text.trim().characters.first.toUpperCase(),
-        style: TextStyle(fontSize: size * 0.42, fontWeight: FontWeight.w600, color: Colors.white),
+        initialsOf(text),
+        style: TextStyle(fontSize: size * 0.36, fontWeight: FontWeight.w700, color: fg),
       ),
     );
   }
@@ -103,6 +100,6 @@ class AppIcon extends StatelessWidget {
     } else {
       return fallback;
     }
-    return ClipRRect(borderRadius: BorderRadius.circular(size / 4), child: image);
+    return ClipRRect(borderRadius: BorderRadius.circular(size * 0.3), child: image);
   }
 }

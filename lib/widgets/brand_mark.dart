@@ -30,7 +30,11 @@ class BrandMark extends StatelessWidget {
       height: size,
       constraints: BoxConstraints(minWidth: size, maxWidth: size * 3.2),
       padding: EdgeInsets.all(size * 0.14),
-      decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(size * 0.28)),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(size * 0.28),
+        border: onBrand ? null : Border.all(color: const Color(0xFFE3E6EB)),
+      ),
       child: Image.network(
         url,
         fit: BoxFit.contain,

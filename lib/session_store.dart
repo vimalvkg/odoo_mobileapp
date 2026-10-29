@@ -101,3 +101,22 @@ class AppPrefs {
   static Future<void> setThemeMode(String mode) async =>
       (await SharedPreferences.getInstance()).setString('theme_mode', mode);
 }
+
+/// Menus pinned to the home screen, per server and database.
+class PinnedMenus {
+  static String _key(String serverUrl, String db) => 'pinned_menus:$serverUrl|$db';
+
+  static Future<List<int>> load(String serverUrl, String db) async {
+    final raw = (await SharedPreferences.getInstance()).getStringList(_key(serverUrl, db));
+    return [for (final s in raw ?? const <String>[]) ?int.tryParse(s)];
+  }
+
+  /// Pins or unpins [menuId]; returns whether it is now pinned.
+  static Future<bool> toggle(String serverUrl, String db, int menuId) async {
+    final pins = await load(serverUrl, db);
+    final pinned = !pins.remove(menuId);
+    if (pinned) pins.add(menuId);
+    await (await SharedPreferences.getInstance()).setStringList(_key(serverUrl, db), [for (final id in pins) '$id']);
+    return pinned;
+  }
+}

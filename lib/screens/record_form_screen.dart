@@ -116,7 +116,7 @@ class _RecordFormScreenState extends State<RecordFormScreen> {
         await _resolveMany2oneDefaults(record, fields);
       }
 
-      final (tagNames, lines) = await (_loadTagNames(record, fields, arch), _loadLines(record, views, arch)).wait;
+      final (tagNames, lines) = await (_loadTagNames(record, fields, arch), _loadLines(record, views, arch)).both;
       if (!mounted) return;
       setState(() {
         _fields = fields;
@@ -559,12 +559,12 @@ class _RecordFormScreenState extends State<RecordFormScreen> {
                 child: Column(
                   children: [
                     CircleAvatar(
-                      radius: 20,
-                      backgroundColor: scheme.primaryContainer,
-                      child: Icon(icon, size: 20, color: scheme.onPrimaryContainer),
+                      radius: 22,
+                      backgroundColor: scheme.primary.withValues(alpha: 0.12),
+                      child: Icon(icon, size: 20, color: scheme.primary),
                     ),
-                    const SizedBox(height: 4),
-                    Text(label, style: TextStyle(fontSize: 12, color: scheme.onSurfaceVariant)),
+                    const SizedBox(height: 6),
+                    Text(label, style: TextStyle(fontSize: 12, color: scheme.onSurface)),
                   ],
                 ),
               ),
@@ -643,10 +643,11 @@ class _RecordFormScreenState extends State<RecordFormScreen> {
       parentEnv: env,
       editing: _editing,
       readonly: readonly,
-      addLabel: 'Add a line',
+      addLabel: lines.relation.endsWith('.line') ? 'Add a line' : 'Add',
       onAdd: () => _openLine(f.name, f, null, readonly),
       onOpen: (line) => _openLine(f.name, f, line, readonly),
       onRemove: (line) => setState(() => _removeLine(lines, line)),
+      rpc: widget.rpc,
     );
   }
 
@@ -664,7 +665,10 @@ class _RecordFormScreenState extends State<RecordFormScreen> {
         padding: const EdgeInsets.symmetric(vertical: 10),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [if (showLabel) ...[label, const SizedBox(height: 4)], _linesField(f, env)],
+          children: [
+            if (showLabel) ...[label, const SizedBox(height: 4)],
+            _linesField(f, env),
+          ],
         ),
       );
     }
@@ -679,7 +683,10 @@ class _RecordFormScreenState extends State<RecordFormScreen> {
         padding: const EdgeInsets.symmetric(vertical: 10),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
-          children: [if (showLabel) ...[label, const SizedBox(height: 4)], _fieldView(f)],
+          children: [
+            if (showLabel) ...[label, const SizedBox(height: 4)],
+            _fieldView(f),
+          ],
         ),
       );
     }
@@ -763,57 +770,77 @@ class _RecordFormScreenState extends State<RecordFormScreen> {
   Widget _notebook(List<(String, List<Widget>)> pages) {
     final key = pages.map((p) => p.$1).join('|');
     final selected = (_selectedPage[key] ?? 0).clamp(0, pages.length - 1);
-    final scheme = Theme.of(context).colorScheme;
+    final c = AppColors.of(context);
     return Padding(
       padding: const EdgeInsets.only(bottom: 12),
-      child: Card(
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            if (pages.length > 1)
-              SingleChildScrollView(
-                scrollDirection: Axis.horizontal,
-                padding: const EdgeInsets.fromLTRB(8, 8, 8, 0),
-                child: Row(
-                  children: [
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          if (pages.length > 1) ...[
+            // Segmented control, scrolling when there are many pages.
+            Container(
+              padding: const EdgeInsets.all(4),
+              decoration: BoxDecoration(color: c.soft, borderRadius: BorderRadius.circular(14)),
+              child: LayoutBuilder(
+                builder: (_, box) {
+                  final fit = pages.length <= 3;
+                  final tabs = [
                     for (var i = 0; i < pages.length; i++)
-                      InkWell(
-                        borderRadius: BorderRadius.circular(8),
-                        onTap: () => setState(() => _selectedPage[key] = i),
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-                          decoration: BoxDecoration(
-                            border: Border(
-                              bottom: BorderSide(
-                                color: i == selected ? scheme.primary : Colors.transparent,
-                                width: 2.5,
+                      Material(
+                        color: i == selected ? c.card : Colors.transparent,
+                        borderRadius: BorderRadius.circular(11),
+                        child: InkWell(
+                          borderRadius: BorderRadius.circular(11),
+                          onTap: () {
+                            HapticFeedback.selectionClick();
+                            setState(() => _selectedPage[key] = i);
+                          },
+                          child: Container(
+                            height: 38,
+                            alignment: Alignment.center,
+                            padding: const EdgeInsets.symmetric(horizontal: 14),
+                            child: Text(
+                              pages[i].$1,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(
+                                fontSize: 14,
+                                fontWeight: i == selected ? FontWeight.w600 : FontWeight.w500,
+                                color: i == selected ? c.ink : c.muted,
                               ),
-                            ),
-                          ),
-                          child: Text(
-                            pages[i].$1,
-                            style: TextStyle(
-                              fontWeight: i == selected ? FontWeight.w700 : FontWeight.w500,
-                              color: i == selected ? scheme.primary : scheme.onSurfaceVariant,
                             ),
                           ),
                         ),
                       ),
-                  ],
-                ),
-              )
-            else
-              Padding(
-                padding: const EdgeInsets.fromLTRB(16, 14, 16, 0),
-                child: Text(pages.first.$1, style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 15)),
+                  ];
+                  return fit
+                      ? Row(children: [for (final t in tabs) Expanded(child: t)])
+                      : SingleChildScrollView(
+                          scrollDirection: Axis.horizontal,
+                          child: Row(children: tabs),
+                        );
+                },
               ),
-            if (pages.length > 1) const Divider(height: 1),
-            Padding(
-              padding: const EdgeInsets.fromLTRB(16, 4, 16, 6),
-              child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: _divided(pages[selected].$2)),
             ),
+            const SizedBox(height: 12),
           ],
-        ),
+          Card(
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(16, 4, 16, 6),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  if (pages.length == 1)
+                    Padding(
+                      padding: const EdgeInsets.only(top: 12, bottom: 2),
+                      child: Text(pages.first.$1, style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 15)),
+                    ),
+                  ..._divided(pages[selected].$2),
+                ],
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -852,80 +879,110 @@ class _RecordFormScreenState extends State<RecordFormScreen> {
     );
   }
 
-  /// Odoo's statusbar as a row of steps: done, current, upcoming.
-  Widget _statusBar(ArchField f) {
+  /// The statusbar's steps, as (value, label).
+  List<(Object?, String)> _statusSteps(ArchField f) {
     final field = _fields[f.name];
-    if (field == null) return const SizedBox.shrink();
+    if (field == null) return const [];
     final value = _value(f.name);
-    final scheme = Theme.of(context).colorScheme;
-    final List<(Object?, String)> steps;
     if (field['type'] == 'selection') {
       final visible = f.attrs['statusbar_visible']?.split(',').map((s) => s.trim()).toSet();
-      steps = [
+      return [
         for (final o in (field['selection'] as List? ?? const []))
           if (o is List && o.length > 1 && (visible == null || visible.contains(o[0]) || o[0] == value))
             (o[0], o[1].toString()),
       ];
-    } else {
-      final text = formatFieldValue(value, field);
-      steps = text.isEmpty ? [] : [(value, text)];
     }
-    if (steps.isEmpty) return const SizedBox.shrink();
+    final text = formatFieldValue(value, field);
+    return text.isEmpty ? const [] : [(value, text)];
+  }
+
+  /// Odoo's statusbar as a progress bar: done and current steps filled.
+  Widget _statusBar(ArchField f) {
+    final steps = _statusSteps(f);
+    if (steps.length < 2) return const SizedBox.shrink();
+    final value = _value(f.name);
     final current = steps.indexWhere((s) => pyEquals(s.$1, value));
-    return SingleChildScrollView(
-      scrollDirection: Axis.horizontal,
-      child: Row(
-        children: [
-          for (var i = 0; i < steps.length; i++) ...[
-            if (i > 0) Icon(Icons.chevron_right, size: 18, color: scheme.outlineVariant),
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-              decoration: BoxDecoration(
-                color: i == current
-                    ? scheme.primary
-                    : (i < current ? scheme.primaryContainer : scheme.surfaceContainerHighest),
-                borderRadius: BorderRadius.circular(20),
-              ),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  if (i < current) ...[
-                    Icon(Icons.check, size: 14, color: scheme.onPrimaryContainer),
-                    const SizedBox(width: 4),
-                  ],
-                  Text(
-                    steps[i].$2,
-                    style: TextStyle(
-                      fontSize: 12,
-                      fontWeight: FontWeight.w600,
-                      color: i == current
-                          ? scheme.onPrimary
-                          : (i < current ? scheme.onPrimaryContainer : scheme.onSurfaceVariant),
-                    ),
+    final scheme = Theme.of(context).colorScheme;
+    final c = AppColors.of(context);
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        for (var i = 0; i < steps.length; i++) ...[
+          if (i > 0) const SizedBox(width: 6),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Container(
+                  height: 6,
+                  decoration: BoxDecoration(
+                    color: i <= current ? scheme.primary : c.border,
+                    borderRadius: BorderRadius.circular(3),
                   ),
-                ],
-              ),
+                ),
+                const SizedBox(height: 6),
+                Text(
+                  steps[i].$2,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    fontSize: 11,
+                    fontWeight: i == current ? FontWeight.w700 : FontWeight.w500,
+                    color: i == current ? scheme.primary : c.muted,
+                  ),
+                ),
+              ],
             ),
-          ],
+          ),
         ],
-      ),
+      ],
     );
   }
 
+  /// The record's total (orders, invoices, expenses), when its form shows one.
+  String? get _totalText {
+    for (final name in const ['amount_total', 'total_amount', 'amount_total_signed']) {
+      if (!(_arch?.fieldNames.contains(name) ?? false) || _fields[name] == null) continue;
+      final v = _value(name);
+      if (v is! num) continue;
+      final currency = _value('currency_id');
+      final code = currency is List && currency.length > 1 ? '${currency[1]} ' : '';
+      return '$code${formatNumber(v)}';
+    }
+    return null;
+  }
+
+  List<FormButton> _visibleButtons(FormArch arch, Map<String, dynamic> env) => _editing || _id == null
+      ? const []
+      : [
+          for (final b in arch.buttons)
+            if (!evalModifier(b.invisible, env)) b,
+        ];
+
   Widget _header(FormArch arch, Map<String, dynamic> env) {
-    final scheme = Theme.of(context).colorScheme;
+    final c = AppColors.of(context);
     final titleFields = [
       for (final f in _visibleFields(arch.body, env))
         if (_isTitleField(arch.body, f.name)) f,
     ];
     final image = _imageField == null ? null : decodeOdooImage(_record[_imageField]);
-    final title = _id == null ? 'New ${widget.title}' : (_value('display_name') ?? widget.title).toString();
-    final buttons = _editing || _id == null
-        ? const <FormButton>[]
-        : [
-            for (final b in arch.buttons)
-              if (!evalModifier(b.invisible, env)) b,
-          ];
+    final name = _id == null ? 'New ${widget.title}' : (_value('display_name') ?? widget.title).toString();
+    // Orders and invoices read best as the customer, with the reference above.
+    final partner = _value('partner_id');
+    final partnerName = _fields['partner_id']?['type'] == 'many2one' && partner is List && partner.length > 1
+        ? partner[1].toString()
+        : '';
+    final big = _id != null && partnerName.isNotEmpty && partnerName != name ? partnerName : name;
+    final small = big == name ? null : name;
+
+    final statusField = arch.statusBar;
+    final steps = statusField == null ? const <(Object?, String)>[] : _statusSteps(statusField);
+    final statusValue = statusField == null ? null : _value(statusField.name);
+    final current = steps.where((s) => pyEquals(s.$1, statusValue)).firstOrNull;
+    final (pillBg, pillFg) = statusColors(
+      statusValue is List ? statusValue.last : statusValue,
+      Theme.of(context).colorScheme,
+    );
 
     return Padding(
       padding: const EdgeInsets.only(bottom: 12),
@@ -939,54 +996,145 @@ class _RecordFormScreenState extends State<RecordFormScreen> {
                 for (final f in titleFields) _fieldRow(f, env)
               else
                 Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    if (image != null)
+                    if (image != null) ...[
                       ClipRRect(
-                        borderRadius: BorderRadius.circular(12),
+                        borderRadius: BorderRadius.circular(14),
                         child: OdooImage(
                           bytes: image,
                           size: 56,
-                          fallback: LetterAvatar(text: title, size: 56),
+                          fallback: LetterAvatar(text: big, size: 56),
                         ),
-                      )
-                    else
-                      LetterAvatar(text: title, size: 56),
-                    const SizedBox(width: 14),
+                      ),
+                      const SizedBox(width: 14),
+                    ],
                     Expanded(
-                      child: Text(
-                        title,
-                        style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w700, height: 1.25),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          if (small != null) Text(small, style: TextStyle(fontSize: 13, color: c.muted)),
+                          Text(big, style: const TextStyle(fontSize: 22, fontWeight: FontWeight.w800, height: 1.2)),
+                        ],
                       ),
                     ),
+                    if (current != null) ...[
+                      const SizedBox(width: 8),
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                        decoration: BoxDecoration(color: pillBg, borderRadius: BorderRadius.circular(10)),
+                        child: Text(
+                          current.$2,
+                          style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: pillFg),
+                        ),
+                      ),
+                    ],
                   ],
                 ),
+              if (statusField != null && steps.length > 1) ...[const SizedBox(height: 16), _statusBar(statusField)],
               if (!_editing && _id != null) _quickActions(_visibleFields(arch.body, env)),
-              if (arch.statusBar != null) ...[const SizedBox(height: 14), _statusBar(arch.statusBar!)],
-              if (buttons.isNotEmpty) ...[
-                const SizedBox(height: 14),
-                Divider(height: 1, color: scheme.outlineVariant.withValues(alpha: 0.5)),
-                const SizedBox(height: 12),
-                Wrap(
-                  spacing: 8,
-                  runSpacing: 8,
-                  children: [
-                    for (final b in buttons)
-                      b.primary
-                          ? FilledButton(
-                              style: FilledButton.styleFrom(minimumSize: const Size(0, 40)),
-                              onPressed: _busy ? null : () => _runButton(b),
-                              child: Text(b.label),
-                            )
-                          : OutlinedButton(
-                              style: OutlinedButton.styleFrom(minimumSize: const Size(0, 40)),
-                              onPressed: _busy ? null : () => _runButton(b),
-                              child: Text(b.label),
-                            ),
-                  ],
-                ),
-              ],
             ],
           ),
+        ),
+      ),
+    );
+  }
+
+  /// View mode footer: the total and the form's header buttons (primary one
+  /// filled), extra buttons under "More".
+  Widget? _actionBar(FormArch arch, Map<String, dynamic> env) {
+    final buttons = _visibleButtons(arch, env);
+    final total = _totalText;
+    if (buttons.isEmpty && total == null) return null;
+    final c = AppColors.of(context);
+    // Primary buttons, plus the first others in the form's own order; the
+    // rest go under "More".
+    final primaries = buttons.where((b) => b.primary).take(2).toList();
+    final others = buttons.where((b) => !b.primary).toList();
+    final shown = [...others.take(2 - primaries.length), ...primaries];
+    final more = [for (final b in buttons) if (!shown.contains(b)) b];
+    return Container(
+      decoration: BoxDecoration(
+        color: c.card,
+        border: Border(top: BorderSide(color: c.border)),
+      ),
+      child: SafeArea(
+        top: false,
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              if (total != null)
+                Padding(
+                  padding: EdgeInsets.only(bottom: shown.isEmpty ? 0 : 10),
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: Text('Total', style: TextStyle(fontSize: 13, color: c.muted)),
+                      ),
+                      Text(total, style: const TextStyle(fontSize: 22, fontWeight: FontWeight.w800)),
+                    ],
+                  ),
+                ),
+              if (shown.isNotEmpty)
+                Row(
+                  children: [
+                    if (more.isNotEmpty) ...[
+                      IconButton.outlined(
+                        tooltip: 'More actions',
+                        style: IconButton.styleFrom(
+                          fixedSize: const Size(50, 50),
+                          side: BorderSide(color: c.border),
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                        ),
+                        onPressed: _busy ? null : () => _showMoreButtons(more),
+                        icon: const Icon(Icons.more_horiz),
+                      ),
+                      const SizedBox(width: 10),
+                    ],
+                    for (var i = 0; i < shown.length; i++) ...[
+                      if (i > 0) const SizedBox(width: 10),
+                      Expanded(
+                        child: shown[i].primary || (i == shown.length - 1 && !shown.any((b) => b.primary))
+                            ? FilledButton(
+                                onPressed: _busy ? null : () => _runButton(shown[i]),
+                                child: Text(shown[i].label, maxLines: 1, overflow: TextOverflow.ellipsis),
+                              )
+                            : OutlinedButton(
+                                onPressed: _busy ? null : () => _runButton(shown[i]),
+                                child: Text(shown[i].label, maxLines: 1, overflow: TextOverflow.ellipsis),
+                              ),
+                      ),
+                    ],
+                  ],
+                ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  void _showMoreButtons(List<FormButton> buttons) {
+    showModalBottomSheet<void>(
+      context: context,
+      showDragHandle: true,
+      builder: (sheet) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            for (final b in buttons)
+              ListTile(
+                title: Text(b.label, style: const TextStyle(fontWeight: FontWeight.w600)),
+                onTap: () {
+                  Navigator.of(sheet).pop();
+                  _runButton(b);
+                },
+              ),
+            const SizedBox(height: 8),
+          ],
         ),
       ),
     );
@@ -1081,6 +1229,7 @@ class _RecordFormScreenState extends State<RecordFormScreen> {
       },
       child: Scaffold(
         appBar: AppBar(
+          centerTitle: true,
           title: Text(widget.title),
           actions: [
             if (arch != null && !_editing) ...[
@@ -1108,7 +1257,9 @@ class _RecordFormScreenState extends State<RecordFormScreen> {
         ),
         drawer: widget.drawer,
         body: body,
-        bottomNavigationBar: arch != null && _editing
+        bottomNavigationBar: arch != null && !_editing
+            ? _actionBar(arch, _env)
+            : arch != null && _editing
             ? SafeArea(
                 child: Container(
                   padding: const EdgeInsets.fromLTRB(16, 10, 16, 10),
