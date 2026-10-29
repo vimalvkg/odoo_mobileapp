@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+import '../l10n.dart';
 import '../odoo/expr.dart';
 import '../odoo/format.dart';
 import '../odoo/rpc.dart';
@@ -177,7 +178,7 @@ class X2ManyLinesView extends StatelessWidget {
     if (qty != null && price != null) {
       final discount = _num(line, 'discount') ?? 0;
       final q = qty == qty.truncate() ? qty.toInt().toString() : formatNumber(qty);
-      return '$q × ${formatNumber(price)}${discount != 0 ? ' · ${formatNumber(discount, decimals: discount == discount.truncate() ? 0 : 2)}% off' : ''}';
+      return '$q × ${formatNumber(price)}${discount != 0 ? ' · ${tr('{n}% off', {'n': formatNumber(discount, decimals: discount == discount.truncate() ? 0 : 2)})}' : ''}';
     }
     return [
       for (final c in columns)
@@ -219,7 +220,7 @@ class X2ManyLinesView extends StatelessWidget {
     final amount = amountCol == null ? '' : formatFieldValue(line.value(amountCol.name), lines.fields[amountCol.name]!);
     final summary = _summary(line, columns, {?titleCol, ?amountCol});
     final pending = line.id == null || line.changes.isNotEmpty;
-    final display = title.isEmpty ? (line.value('display_name')?.toString() ?? 'New line') : title;
+    final display = title.isEmpty ? (line.value('display_name')?.toString() ?? tr('New line')) : title;
 
     // Product photo when the line's title is a product.
     final product = titleCol == null ? null : line.value(titleCol.name);
@@ -265,7 +266,7 @@ class X2ManyLinesView extends StatelessWidget {
                     Padding(
                       padding: const EdgeInsets.only(top: 2),
                       child: Text(
-                        'Not saved yet',
+                        tr('Not saved yet'),
                         style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: scheme.primary),
                       ),
                     ),
@@ -283,8 +284,8 @@ class X2ManyLinesView extends StatelessWidget {
       key: ValueKey(line.key),
       direction: DismissDirection.endToStart,
       background: Container(
-        alignment: Alignment.centerRight,
-        padding: const EdgeInsets.only(right: 20),
+        alignment: AlignmentDirectional.centerEnd,
+        padding: const EdgeInsetsDirectional.only(end: 20),
         color: scheme.errorContainer,
         child: Icon(Icons.delete_outline, color: scheme.onErrorContainer),
       ),
@@ -309,7 +310,7 @@ class X2ManyLinesView extends StatelessWidget {
         if (lines.items.isEmpty)
           Padding(
             padding: const EdgeInsets.symmetric(vertical: 10),
-            child: Text('No lines yet', style: TextStyle(color: c.muted)),
+            child: Text(tr('No lines yet'), style: TextStyle(color: c.muted)),
           ),
         for (var i = 0; i < lines.items.length; i++) _line(context, lines.items[i], columns, i == 0),
         if (!readonly && lines.canCreate)
@@ -450,7 +451,7 @@ class _LineEditorState extends State<_LineEditor> {
     ];
     if (missing.isNotEmpty || invalid.isNotEmpty) {
       setState(
-        () => _error = missing.isNotEmpty ? 'Fill in: ${missing.join(', ')}' : 'Not a number: ${invalid.join(', ')}',
+        () => _error = missing.isNotEmpty ? tr('Fill in: {fields}', {'fields': missing.join(isArabic ? '، ' : ', ')}) : tr('Not a number: {fields}', {'fields': invalid.join(isArabic ? '، ' : ', ')}),
       );
       return;
     }
@@ -522,20 +523,20 @@ class _LineEditorState extends State<_LineEditor> {
             Padding(
               padding: const EdgeInsets.fromLTRB(20, 12, 20, 16),
               child: widget.readonly
-                  ? FilledButton(onPressed: () => Navigator.of(context).pop(), child: const Text('Close'))
+                  ? FilledButton(onPressed: () => Navigator.of(context).pop(), child: Text(tr('Close')))
                   : Row(
                       children: [
                         if (widget.line.id != null || widget.line.values.isNotEmpty || widget.line.changes.isNotEmpty)
                           if (_lines.canDelete)
                             IconButton(
-                              tooltip: 'Remove line',
+                              tooltip: tr('Remove line'),
                               icon: Icon(Icons.delete_outline, color: scheme.error),
                               onPressed: () => Navigator.of(context).pop(const LineRemoved()),
                             ),
                         const Spacer(),
-                        OutlinedButton(onPressed: () => Navigator.of(context).pop(), child: const Text('Cancel')),
+                        OutlinedButton(onPressed: () => Navigator.of(context).pop(), child: Text(tr('Cancel'))),
                         const SizedBox(width: 12),
-                        FilledButton(onPressed: _done, child: const Text('Done')),
+                        FilledButton(onPressed: _done, child: Text(tr('Done'))),
                       ],
                     ),
             ),

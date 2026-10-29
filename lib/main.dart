@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_localizations/flutter_localizations.dart';
 
 import 'app_navigation.dart';
+import 'l10n.dart';
 import 'screens/splash_screen.dart';
 import 'theme.dart';
 
@@ -16,7 +18,7 @@ class MobileApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return ListenableBuilder(
-      listenable: Listenable.merge([brandColor, themeMode]),
+      listenable: Listenable.merge([brandColor, themeMode, appLanguage]),
       builder: (_, _) => MaterialApp(
         title: appName,
         navigatorKey: navigatorKey,
@@ -24,6 +26,9 @@ class MobileApp extends StatelessWidget {
         theme: buildTheme(Brightness.light, brandColor.value),
         darkTheme: buildTheme(Brightness.dark, brandColor.value),
         themeMode: themeMode.value,
+        locale: appLocale,
+        supportedLocales: [for (final code in kMaterialSupportedLanguages) Locale(code)],
+        localizationsDelegates: GlobalMaterialLocalizations.delegates,
         home: home,
       ),
     );

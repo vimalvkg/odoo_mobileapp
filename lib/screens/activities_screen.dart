@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../app_navigation.dart';
+import '../l10n.dart';
 import '../odoo/format.dart';
 import '../odoo/rpc.dart';
 import '../theme.dart';
@@ -84,7 +85,7 @@ class ActivitiesScreenState extends State<ActivitiesScreen> {
         ],
       );
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Activity marked as done')));
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(tr('Activity marked as done'))));
       }
     } catch (e) {
       if (mounted) handleRpcError(context, e);
@@ -115,11 +116,11 @@ class ActivitiesScreenState extends State<ActivitiesScreen> {
     if (d == null) return '';
     final now = DateTime.now();
     final days = DateTime(d.year, d.month, d.day).difference(DateTime(now.year, now.month, now.day)).inDays;
-    if (days == 0) return 'Today';
-    if (days == 1) return 'Tomorrow';
-    if (days == -1) return 'Yesterday';
-    if (days < 0) return '${-days} days late';
-    if (days < 7) return 'In $days days';
+    if (days == 0) return tr('Today');
+    if (days == 1) return tr('Tomorrow');
+    if (days == -1) return tr('Yesterday');
+    if (days < 0) return tr('{n} days late', {'n': -days});
+    if (days < 7) return tr('In {n} days', {'n': days});
     return formatDate(d);
   }
 
@@ -136,7 +137,7 @@ class ActivitiesScreenState extends State<ActivitiesScreen> {
 
   Widget _tile(Map<String, dynamic> a, Color accent) {
     final c = AppColors.of(context);
-    final type = a['activity_type_id'] is List ? (a['activity_type_id'] as List)[1].toString() : 'Activity';
+    final type = a['activity_type_id'] is List ? (a['activity_type_id'] as List)[1].toString() : tr('Activity');
     final summary = a['summary'] is String && (a['summary'] as String).isNotEmpty ? a['summary'] as String : type;
     const green = Color(0xFF1E7A3A);
     return Dismissible(
@@ -145,15 +146,15 @@ class ActivitiesScreenState extends State<ActivitiesScreen> {
       background: Container(
         margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 5),
         padding: const EdgeInsets.symmetric(horizontal: 24),
-        alignment: Alignment.centerLeft,
+        alignment: AlignmentDirectional.centerStart,
         decoration: BoxDecoration(color: green.withValues(alpha: 0.15), borderRadius: BorderRadius.circular(18)),
-        child: const Row(
+        child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
             Icon(Icons.check, color: green),
             SizedBox(width: 8),
             Text(
-              'Done',
+              tr('Done'),
               style: TextStyle(color: green, fontWeight: FontWeight.w600),
             ),
           ],
@@ -170,7 +171,7 @@ class ActivitiesScreenState extends State<ActivitiesScreen> {
             borderRadius: BorderRadius.circular(18),
             onTap: () => _open(a),
             child: Padding(
-              padding: const EdgeInsets.fromLTRB(14, 12, 10, 12),
+              padding: const EdgeInsetsDirectional.fromSTEB(14, 12, 10, 12),
               child: Row(
                 children: [
                   Container(
@@ -207,7 +208,7 @@ class ActivitiesScreenState extends State<ActivitiesScreen> {
                     ),
                   ),
                   IconButton.outlined(
-                    tooltip: 'Mark as done',
+                    tooltip: tr('Mark as done'),
                     style: IconButton.styleFrom(
                       side: BorderSide(color: c.border),
                       fixedSize: const Size(44, 44),
@@ -290,14 +291,14 @@ class ActivitiesScreenState extends State<ActivitiesScreen> {
       final groups = _upcoming
           ? [
               (
-                'Upcoming',
+                tr('Upcoming'),
                 scheme.primary,
                 activities.where((a) => a['state'] != 'overdue' && a['state'] != 'today').toList(),
               ),
             ]
           : [
-              ('Overdue', red, activities.where((a) => a['state'] == 'overdue').toList()),
-              ('Today', amber, activities.where((a) => a['state'] == 'today').toList()),
+              (tr('Overdue'), red, activities.where((a) => a['state'] == 'overdue').toList()),
+              (tr('Today'), amber, activities.where((a) => a['state'] == 'today').toList()),
             ];
       final empty = groups.every((g) => g.$3.isEmpty);
       body = RefreshIndicator(
@@ -310,13 +311,13 @@ class ActivitiesScreenState extends State<ActivitiesScreen> {
               Icon(Icons.task_alt, size: 64, color: scheme.primary.withValues(alpha: 0.5)),
               const SizedBox(height: 12),
               Text(
-                _upcoming ? 'Nothing planned' : "You're all caught up",
+                _upcoming ? tr('Nothing planned') : tr("You're all caught up"),
                 textAlign: TextAlign.center,
                 style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w600),
               ),
               const SizedBox(height: 4),
               Text(
-                _upcoming ? 'No upcoming activities.' : 'Nothing overdue or due today.',
+                _upcoming ? tr('No upcoming activities.') : tr('Nothing overdue or due today.'),
                 textAlign: TextAlign.center,
                 style: TextStyle(color: c.muted),
               ),
@@ -336,7 +337,7 @@ class ActivitiesScreenState extends State<ActivitiesScreen> {
               Padding(
                 padding: const EdgeInsets.only(top: 10),
                 child: Text(
-                  'Swipe right to mark done · tap to open the record',
+                  tr('Swipe to mark done · tap to open the record'),
                   textAlign: TextAlign.center,
                   style: TextStyle(fontSize: 12, color: c.muted),
                 ),
@@ -352,10 +353,10 @@ class ActivitiesScreenState extends State<ActivitiesScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            const Padding(
+            Padding(
               padding: EdgeInsets.fromLTRB(20, 16, 20, 14),
               child: Text(
-                'My activities',
+                tr('My activities'),
                 style: TextStyle(fontSize: 26, fontWeight: FontWeight.w800, letterSpacing: -0.4),
               ),
             ),
@@ -366,8 +367,8 @@ class ActivitiesScreenState extends State<ActivitiesScreen> {
                 decoration: BoxDecoration(color: c.soft, borderRadius: BorderRadius.circular(14)),
                 child: Row(
                   children: [
-                    _segment('Today', !_upcoming, due, red, () => setState(() => _upcoming = false)),
-                    _segment('Upcoming', _upcoming, upcoming, scheme.primary, () => setState(() => _upcoming = true)),
+                    _segment(tr('Today'), !_upcoming, due, red, () => setState(() => _upcoming = false)),
+                    _segment(tr('Upcoming'), _upcoming, upcoming, scheme.primary, () => setState(() => _upcoming = true)),
                   ],
                 ),
               ),

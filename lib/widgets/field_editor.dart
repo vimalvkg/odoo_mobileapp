@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../l10n.dart';
 import '../odoo/domain.dart';
 import '../odoo/format.dart';
 import '../odoo/rpc.dart';
@@ -130,7 +131,7 @@ class FieldEditor extends StatelessWidget {
                 ),
               ActionChip(
                 avatar: const Icon(Icons.add, size: 18),
-                label: const Text('Add'),
+                label: Text(tr('Add')),
                 visualDensity: VisualDensity.compact,
                 onPressed: () async {
                   final picked = await showMany2onePicker(
@@ -232,7 +233,7 @@ class _TapField extends StatelessWidget {
         decoration: InputDecoration(
           labelText: label,
           suffixIcon: onClear != null
-              ? IconButton(icon: const Icon(Icons.clear), tooltip: 'Clear', onPressed: onClear)
+              ? IconButton(icon: const Icon(Icons.clear), tooltip: tr('Clear'), onPressed: onClear)
               : Icon(icon),
         ),
         isEmpty: text.isEmpty,

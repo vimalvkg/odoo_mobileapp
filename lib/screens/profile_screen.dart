@@ -2,10 +2,12 @@ import 'package:flutter/material.dart';
 
 import '../app_navigation.dart';
 import '../biometric.dart';
+import '../l10n.dart';
 import '../odoo/rpc.dart';
 import '../session_store.dart';
 import '../theme.dart';
 import '../widgets/record_avatar.dart';
+import 'home_screen.dart';
 import 'webview_screen.dart';
 
 /// The signed-in user, their company and server, and app settings.
@@ -21,11 +23,76 @@ class ProfileScreen extends StatefulWidget {
 class _ProfileScreenState extends State<ProfileScreen> {
   bool _biometricAvailable = false;
   bool _biometricOn = false;
+  List<({String code, String name})> _languages = [];
 
   @override
   void initState() {
     super.initState();
     _loadSettings();
+    _loadLanguages();
+  }
+
+  Future<void> _loadLanguages() async {
+    try {
+      final languages = await widget.rpc.loadLanguages();
+      if (mounted) setState(() => _languages = languages);
+    } on OdooException {
+      // Without the list, the current language just shows by its code.
+    }
+  }
+
+  String get _languageName {
+    final code = widget.rpc.userContext['lang']?.toString() ?? appLanguage.value;
+    return _languages.where((l) => l.code == code).firstOrNull?.name ?? code;
+  }
+
+  /// Picks from the languages installed in this database and saves it as
+  /// the user's Odoo preference, then reloads so menus and records come
+  /// back in that language.
+  Future<void> _pickLanguage() async {
+    final current = widget.rpc.userContext['lang']?.toString();
+    final picked = await showModalBottomSheet<String>(
+      context: context,
+      showDragHandle: true,
+      isScrollControlled: true,
+      builder: (sheetContext) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Padding(
+              padding: const EdgeInsetsDirectional.fromSTEB(20, 0, 20, 8),
+              child: Text(tr('Language'), style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w700)),
+            ),
+            Flexible(
+              child: ListView(
+                shrinkWrap: true,
+                children: [
+                  for (final l in _languages)
+                    ListTile(
+                      title: Text(l.name),
+                      trailing: l.code == current ? Icon(Icons.check, color: Theme.of(context).colorScheme.primary) : null,
+                      onTap: () => Navigator.of(sheetContext).pop(l.code),
+                    ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+    if (picked == null || picked == current || !mounted) return;
+    try {
+      await widget.rpc.setUserLanguage(picked);
+    } catch (e) {
+      if (mounted) handleRpcError(context, e);
+      return;
+    }
+    await setAppLanguage(picked);
+    navigatorKey.currentState?.pushAndRemoveUntil(
+      MaterialPageRoute(builder: (_) => HomeScreen(session: widget.rpc.session, rpc: widget.rpc)),
+      (_) => false,
+    );
   }
 
   Future<void> _loadSettings() async {
@@ -42,7 +109,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
   Future<void> _toggleBiometric(bool on) async {
     // Confirm it's the owner before turning it on, so it can't be enabled
     // on someone else's phone that happens to be unlocked.
-    if (on && !await biometricUnlock('Confirm to enable quick unlock')) return;
+    if (on && !await biometricUnlock(tr('Confirm to enable quick unlock'))) return;
     await AppPrefs.setBiometricEnabled(on);
     if (mounted) setState(() => _biometricOn = on);
   }
@@ -86,9 +153,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
         child: ListView(
           padding: const EdgeInsets.only(bottom: 32),
           children: [
-            const Padding(
+            Padding(
               padding: EdgeInsets.fromLTRB(20, 16, 20, 14),
-              child: Text('Profile', style: TextStyle(fontSize: 26, fontWeight: FontWeight.w800, letterSpacing: -0.4)),
+              child: Text(tr('Profile'), style: TextStyle(fontSize: 26, fontWeight: FontWeight.w800, letterSpacing: -0.4)),
             ),
             Padding(
               padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
@@ -114,7 +181,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                 ),
               ),
             ),
-            _section('Company', [
+            _section(tr('Company'), [
               ListTile(
                 leading: logo == null
                     ? const Icon(Icons.business_outlined)
@@ -128,30 +195,38 @@ class _ProfileScreenState extends State<ProfileScreen> {
                         ),
                       ),
                 title: Text(rpc.companyName ?? '—'),
-                subtitle: const Text('Current company'),
+                subtitle: Text(tr('Current company')),
               ),
               const Divider(height: 1),
               ListTile(
                 leading: const Icon(Icons.dns_outlined),
                 title: Text(Uri.parse(session.serverUrl).host),
-                subtitle: Text('Database: ${session.db}'),
+                subtitle: Text(tr('Database: {db}', {'db': session.db})),
               ),
             ]),
-            _section('Settings', [
+            _section(tr('Settings'), [
+              ListTile(
+                leading: const Icon(Icons.translate),
+                title: Text(tr('Language')),
+                subtitle: Text(_languageName),
+                trailing: const Icon(Icons.chevron_right),
+                onTap: _languages.length > 1 ? _pickLanguage : null,
+              ),
+              const Divider(height: 1),
               Padding(
                 padding: const EdgeInsets.fromLTRB(16, 14, 16, 14),
                 child: Row(
                   children: [
                     const Icon(Icons.dark_mode_outlined),
                     const SizedBox(width: 16),
-                    const Expanded(child: Text('Appearance')),
+                    Expanded(child: Text(tr('Appearance'))),
                     SegmentedButton<ThemeMode>(
                       showSelectedIcon: false,
                       style: const ButtonStyle(visualDensity: VisualDensity.compact),
-                      segments: const [
-                        ButtonSegment(value: ThemeMode.system, label: Text('Auto')),
-                        ButtonSegment(value: ThemeMode.light, label: Text('Light')),
-                        ButtonSegment(value: ThemeMode.dark, label: Text('Dark')),
+                      segments: [
+                        ButtonSegment(value: ThemeMode.system, label: Text(tr('Auto'))),
+                        ButtonSegment(value: ThemeMode.light, label: Text(tr('Light'))),
+                        ButtonSegment(value: ThemeMode.dark, label: Text(tr('Dark'))),
                       ],
                       selected: {themeMode.value},
                       onSelectionChanged: (s) => _setThemeMode(s.first),
@@ -163,17 +238,17 @@ class _ProfileScreenState extends State<ProfileScreen> {
                 const Divider(height: 1),
                 SwitchListTile(
                   secondary: const Icon(Icons.fingerprint),
-                  title: const Text('Quick unlock'),
-                  subtitle: const Text('Fingerprint, face or screen lock'),
+                  title: Text(tr('Quick unlock')),
+                  subtitle: Text(tr('Fingerprint, face or screen lock')),
                   value: _biometricOn,
                   onChanged: _toggleBiometric,
                 ),
               ],
             ]),
-            _section('Account', [
+            _section(tr('Account'), [
               ListTile(
                 leading: const Icon(Icons.language),
-                title: const Text('Open web version'),
+                title: Text(tr('Open web version')),
                 trailing: const Icon(Icons.chevron_right),
                 onTap: () => Navigator.of(context).push(
                   MaterialPageRoute(
@@ -185,7 +260,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
               ListTile(
                 leading: Icon(Icons.logout, color: scheme.error),
                 title: Text(
-                  'Sign out',
+                  tr('Sign out'),
                   style: TextStyle(color: scheme.error, fontWeight: FontWeight.w600),
                 ),
                 onTap: () => endSession(destroy: session),

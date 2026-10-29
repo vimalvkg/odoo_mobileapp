@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 
 import '../app_navigation.dart';
 import '../contact_actions.dart';
+import '../l10n.dart';
 import '../odoo/expr.dart';
 import '../odoo/format.dart';
 import '../odoo/rpc.dart';
@@ -86,7 +87,7 @@ class _RecordFormScreenState extends State<RecordFormScreen> {
         [widget.formViewId ?? false, 'form'],
       ], context: widget.recordContext);
       final archXml = views.archs['form'];
-      if (archXml == null) throw const OdooException('This model has no form view.');
+      if (archXml == null) throw OdooException(tr('This model has no form view.'));
       final arch = parseFormArch(archXml);
       final fields = views.fields;
 
@@ -103,7 +104,7 @@ class _RecordFormScreenState extends State<RecordFormScreen> {
       final id = _id;
       if (id != null) {
         final rows = await widget.rpc.read(widget.model, [id], [...names, ?imageField], context: widget.recordContext);
-        if (rows.isEmpty) throw const OdooException("This record doesn't exist or you can't access it.");
+        if (rows.isEmpty) throw OdooException(tr("This record doesn't exist or you can't access it."));
         record = rows.first;
       } else {
         final defaults = await widget.rpc.callKw(
@@ -301,7 +302,7 @@ class _RecordFormScreenState extends State<RecordFormScreen> {
     if (missing.isNotEmpty || invalid.isNotEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text(missing.isNotEmpty ? 'Fill in: ${missing.join(', ')}' : 'Not a number: ${invalid.join(', ')}'),
+          content: Text(missing.isNotEmpty ? tr('Fill in: {fields}', {'fields': missing.join(isArabic ? '، ' : ', ')}) : tr('Not a number: {fields}', {'fields': invalid.join(isArabic ? '، ' : ', ')})),
         ),
       );
       return;
@@ -365,14 +366,14 @@ class _RecordFormScreenState extends State<RecordFormScreen> {
     if (_lines.values.any((l) => l.dirty)) _load();
   }
 
-  Future<bool> _confirm(String message, {String action = 'OK'}) async {
+  Future<bool> _confirm(String message, {String? action}) async {
     final ok = await showDialog<bool>(
       context: context,
       builder: (dialogContext) => AlertDialog(
         content: Text(message),
         actions: [
-          TextButton(onPressed: () => Navigator.of(dialogContext).pop(false), child: const Text('Cancel')),
-          FilledButton(onPressed: () => Navigator.of(dialogContext).pop(true), child: Text(action)),
+          TextButton(onPressed: () => Navigator.of(dialogContext).pop(false), child: Text(tr('Cancel'))),
+          FilledButton(onPressed: () => Navigator.of(dialogContext).pop(true), child: Text(action ?? tr('OK'))),
         ],
       ),
     );
@@ -420,7 +421,7 @@ class _RecordFormScreenState extends State<RecordFormScreen> {
       final type = result is Map ? result['type'] : null;
       if (type != null && type != 'ir.actions.act_window_close') {
         ScaffoldMessenger.of(context)
-            .showSnackBar(const SnackBar(content: Text('This step continues in the web version.')));
+            .showSnackBar(SnackBar(content: Text(tr('This step continues in the web version.'))));
         _openInWeb();
       }
       await _load();
@@ -433,7 +434,7 @@ class _RecordFormScreenState extends State<RecordFormScreen> {
 
   Future<void> _delete() async {
     final id = _id;
-    if (id == null || !await _confirm('Delete this record?', action: 'Delete')) return;
+    if (id == null || !await _confirm(tr('Delete this record?'), action: tr('Delete'))) return;
     try {
       await widget.rpc.callKw(
         widget.model,
@@ -481,21 +482,22 @@ class _RecordFormScreenState extends State<RecordFormScreen> {
     }
     if (type == 'boolean') {
       return Align(
-        alignment: Alignment.centerLeft,
+        alignment: AlignmentDirectional.centerStart,
         child: Icon(value == true ? Icons.check_box : Icons.check_box_outline_blank, color: theme.colorScheme.primary),
       );
     }
     final text = formatFieldValue(value, field);
     if (text.isEmpty) return Text('—', style: TextStyle(color: theme.colorScheme.outline));
+    final kind = type == 'char' ? contactKindOf(f.name, f.widget) : null;
     final label = Text(
-      text,
+      // Phones, emails and links read left to right even in Arabic.
+      kind == null ? text : '\u2066$text\u2069',
       style: TextStyle(
         fontSize: 15,
         fontWeight: type == 'monetary' ? FontWeight.w700 : FontWeight.w500,
         color: type == 'many2one' ? theme.colorScheme.primary : null,
       ),
     );
-    final kind = type == 'char' ? contactKindOf(f.name, f.widget) : null;
     if (kind == null) return label;
     return Row(
       children: [
@@ -537,11 +539,11 @@ class _RecordFormScreenState extends State<RecordFormScreen> {
     final address = _address;
     final actions = [
       if (phone != null) ...[
-        (Icons.call_outlined, 'Call', () => callPhone(context, phone)),
-        (Icons.chat_outlined, 'WhatsApp', () => whatsApp(context, phone)),
+        (Icons.call_outlined, tr('Call'), () => callPhone(context, phone)),
+        (Icons.chat_outlined, tr('WhatsApp'), () => whatsApp(context, phone)),
       ],
-      if (email != null) (Icons.mail_outline, 'Email', () => sendEmail(context, email)),
-      if (address != null) (Icons.map_outlined, 'Map', () => openMap(context, address)),
+      if (email != null) (Icons.mail_outline, tr('Email'), () => sendEmail(context, email)),
+      if (address != null) (Icons.map_outlined, tr('Map'), () => openMap(context, address)),
     ];
     if (actions.isEmpty) return const SizedBox.shrink();
     final scheme = Theme.of(context).colorScheme;
@@ -603,7 +605,7 @@ class _RecordFormScreenState extends State<RecordFormScreen> {
       line: line,
       parentEnv: _env,
       readonly: readonly || !_editing,
-      title: existing == null ? 'Add: ${_label(f)}' : _label(f),
+      title: existing == null ? tr('Add: {name}', {'name': _label(f)}) : _label(f),
       recordContext: widget.recordContext,
     );
     if (!mounted || result == null) return;
@@ -643,7 +645,7 @@ class _RecordFormScreenState extends State<RecordFormScreen> {
       parentEnv: env,
       editing: _editing,
       readonly: readonly,
-      addLabel: lines.relation.endsWith('.line') ? 'Add a line' : 'Add',
+      addLabel: lines.relation.endsWith('.line') ? tr('Add a line') : tr('Add'),
       onAdd: () => _openLine(f.name, f, null, readonly),
       onOpen: (line) => _openLine(f.name, f, line, readonly),
       onRemove: (line) => setState(() => _removeLine(lines, line)),
@@ -966,7 +968,7 @@ class _RecordFormScreenState extends State<RecordFormScreen> {
         if (_isTitleField(arch.body, f.name)) f,
     ];
     final image = _imageField == null ? null : decodeOdooImage(_record[_imageField]);
-    final name = _id == null ? 'New ${widget.title}' : (_value('display_name') ?? widget.title).toString();
+    final name = _id == null ? tr('New {name}', {'name': widget.title}) : (_value('display_name') ?? widget.title).toString();
     // Orders and invoices read best as the customer, with the reference above.
     final partner = _value('partner_id');
     final partnerName = _fields['partner_id']?['type'] == 'many2one' && partner is List && partner.length > 1
@@ -1072,7 +1074,7 @@ class _RecordFormScreenState extends State<RecordFormScreen> {
                   child: Row(
                     children: [
                       Expanded(
-                        child: Text('Total', style: TextStyle(fontSize: 13, color: c.muted)),
+                        child: Text(tr('Total'), style: TextStyle(fontSize: 13, color: c.muted)),
                       ),
                       Text(total, style: const TextStyle(fontSize: 22, fontWeight: FontWeight.w800)),
                     ],
@@ -1083,7 +1085,7 @@ class _RecordFormScreenState extends State<RecordFormScreen> {
                   children: [
                     if (more.isNotEmpty) ...[
                       IconButton.outlined(
-                        tooltip: 'More actions',
+                        tooltip: tr('More actions'),
                         style: IconButton.styleFrom(
                           fixedSize: const Size(50, 50),
                           side: BorderSide(color: c.border),
@@ -1222,7 +1224,7 @@ class _RecordFormScreenState extends State<RecordFormScreen> {
       canPop: !_editing || !_dirty,
       onPopInvokedWithResult: (didPop, _) async {
         if (didPop) return;
-        if (await _confirm('Discard your changes?', action: 'Discard') && context.mounted) {
+        if (await _confirm(tr('Discard your changes?'), action: tr('Discard')) && context.mounted) {
           _edits.clear();
           Navigator.of(context).pop();
         }
@@ -1235,7 +1237,7 @@ class _RecordFormScreenState extends State<RecordFormScreen> {
             if (arch != null && !_editing) ...[
               if (arch.canEdit)
                 IconButton(
-                  tooltip: 'Edit',
+                  tooltip: tr('Edit'),
                   icon: const Icon(Icons.edit_outlined),
                   onPressed: () => setState(() => _editing = true),
                 ),
@@ -1245,8 +1247,8 @@ class _RecordFormScreenState extends State<RecordFormScreen> {
                   if (choice == 'delete') _delete();
                 },
                 itemBuilder: (_) => [
-                  const PopupMenuItem(value: 'web', child: Text('Open in web')),
-                  if (arch.canDelete) const PopupMenuItem(value: 'delete', child: Text('Delete')),
+                  PopupMenuItem(value: 'web', child: Text(tr('Open in web'))),
+                  if (arch.canDelete) PopupMenuItem(value: 'delete', child: Text(tr('Delete'))),
                 ],
               ),
             ],
@@ -1270,11 +1272,11 @@ class _RecordFormScreenState extends State<RecordFormScreen> {
                   child: Row(
                     children: [
                       Expanded(
-                        child: OutlinedButton(onPressed: _busy ? null : _discard, child: const Text('Discard')),
+                        child: OutlinedButton(onPressed: _busy ? null : _discard, child: Text(tr('Discard'))),
                       ),
                       const SizedBox(width: 12),
                       Expanded(
-                        child: FilledButton(onPressed: _busy ? null : _save, child: const Text('Save')),
+                        child: FilledButton(onPressed: _busy ? null : _save, child: Text(tr('Save'))),
                       ),
                     ],
                   ),

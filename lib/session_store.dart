@@ -100,6 +100,12 @@ class AppPrefs {
 
   static Future<void> setThemeMode(String mode) async =>
       (await SharedPreferences.getInstance()).setString('theme_mode', mode);
+
+  /// Odoo language code, e.g. `ar_001`.
+  static Future<String?> language() async => (await SharedPreferences.getInstance()).getString('language');
+
+  static Future<void> setLanguage(String code) async =>
+      (await SharedPreferences.getInstance()).setString('language', code);
 }
 
 /// Menus pinned to the home screen, per server and database.

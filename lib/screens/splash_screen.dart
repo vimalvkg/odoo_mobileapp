@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../biometric.dart';
+import '../l10n.dart';
 import '../session_store.dart';
 import '../theme.dart';
 import '../widgets/brand_mark.dart';
@@ -24,6 +25,7 @@ class _SplashScreenState extends State<SplashScreen> {
 
   Future<void> _resume() async {
     final session = await SessionStore.load();
+    await loadAppLanguage();
     final mode = await AppPrefs.themeMode();
     themeMode.value = ThemeMode.values.where((m) => m.name == mode).firstOrNull ?? ThemeMode.system;
     final Widget next;

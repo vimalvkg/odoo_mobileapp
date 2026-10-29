@@ -1,4 +1,19 @@
+import '../l10n.dart';
+
 const _months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+
+const _monthsLong = [
+  'January', 'February', 'March', 'April', 'May', 'June',
+  'July', 'August', 'September', 'October', 'November', 'December',
+];
+
+const _monthsArabic = [
+  'يناير', 'فبراير', 'مارس', 'أبريل', 'مايو', 'يونيو',
+  'يوليو', 'أغسطس', 'سبتمبر', 'أكتوبر', 'نوفمبر', 'ديسمبر',
+];
+
+/// Full month name (1–12) in the app's language.
+String monthName(int month) => (isArabic ? _monthsArabic : _monthsLong)[month - 1];
 
 String _two(int n) => n.toString().padLeft(2, '0');
 
@@ -18,7 +33,7 @@ String serializeOdooDateTime(DateTime local) {
   return '${serializeOdooDate(d)} ${_two(d.hour)}:${_two(d.minute)}:${_two(d.second)}';
 }
 
-String formatDate(DateTime d) => '${d.day} ${_months[d.month - 1]} ${d.year}';
+String formatDate(DateTime d) => '${d.day} ${isArabic ? _monthsArabic[d.month - 1] : _months[d.month - 1]} ${d.year}';
 
 String formatDateTime(DateTime d) => '${formatDate(d)} ${_two(d.hour)}:${_two(d.minute)}';
 
@@ -61,7 +76,7 @@ String selectionLabel(dynamic key, Map<String, dynamic> field) {
 /// Display text for a value as returned by `read`/`search_read`.
 String formatFieldValue(dynamic value, Map<String, dynamic> field) {
   final type = field['type'];
-  if (type == 'boolean') return value == true ? 'Yes' : 'No';
+  if (type == 'boolean') return value == true ? tr('Yes') : tr('No');
   if (value == null || value == false) return '';
   switch (type) {
     case 'many2one':
@@ -86,11 +101,11 @@ String formatFieldValue(dynamic value, Map<String, dynamic> field) {
     case 'one2many':
     case 'many2many':
       if (value is! List) return '';
-      return value.length == 1 ? '1 record' : '${value.length} records';
+      return value.length == 1 ? tr('1 record') : tr('{n} records', {'n': value.length});
     case 'html':
       return stripHtml(value.toString());
     case 'binary':
-      return 'File';
+      return tr('File');
     default:
       return value.toString();
   }

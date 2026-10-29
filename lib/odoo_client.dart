@@ -4,6 +4,8 @@ import 'dart:io';
 
 import 'package:http/http.dart' as http;
 
+import 'l10n.dart';
+
 enum AuthOutcome { success, invalidCredentials, noConnection, serverUnreachable, unknown }
 
 class AuthResult {
@@ -11,11 +13,16 @@ class AuthResult {
   final String? sessionId;
   final String? errorMessage;
 
-  AuthResult.ok(this.sessionId)
+  /// The user's Odoo language, e.g. `ar_001`.
+  final String? lang;
+
+  AuthResult.ok(this.sessionId, {this.lang})
       : outcome = AuthOutcome.success,
         errorMessage = null;
 
-  AuthResult.failure(this.outcome, this.errorMessage) : sessionId = null;
+  AuthResult.failure(this.outcome, this.errorMessage)
+      : sessionId = null,
+        lang = null;
 }
 
 bool _isLocalHost(String hostAndPort) {
@@ -55,34 +62,35 @@ class OdooClient {
           .timeout(const Duration(seconds: 15));
 
       if (response.statusCode != 200) {
-        return AuthResult.failure(AuthOutcome.serverUnreachable, 'Server returned ${response.statusCode}.');
+        return AuthResult.failure(AuthOutcome.serverUnreachable, tr('Server returned {code}.', {'code': response.statusCode}));
       }
 
       final decoded = jsonDecode(response.body) as Map<String, dynamic>;
       final result = decoded['result'] as Map<String, dynamic>?;
 
       if (result == null || result['uid'] == null || result['uid'] == false) {
-        return AuthResult.failure(AuthOutcome.invalidCredentials, 'Wrong username or password.');
+        return AuthResult.failure(AuthOutcome.invalidCredentials, tr('Wrong username or password.'));
       }
 
       final setCookie = response.headers['set-cookie'];
       final sessionId = extractSessionId(setCookie);
       if (sessionId == null) {
-        return AuthResult.failure(AuthOutcome.unknown, 'No session returned by the server.');
+        return AuthResult.failure(AuthOutcome.unknown, tr('No session returned by the server.'));
       }
 
-      return AuthResult.ok(sessionId);
+      final context = result['user_context'];
+      return AuthResult.ok(sessionId, lang: context is Map ? context['lang']?.toString() : null);
     } on TimeoutException {
-      return AuthResult.failure(AuthOutcome.serverUnreachable, "The server didn't respond. It may be down.");
+      return AuthResult.failure(AuthOutcome.serverUnreachable, tr("The server didn't respond. It may be down."));
     } on SocketException catch (e) {
       final msg = e.message.toLowerCase();
       final isNetworkDown = msg.contains('network is unreachable') || msg.contains('no address associated');
       return AuthResult.failure(
         isNetworkDown ? AuthOutcome.noConnection : AuthOutcome.serverUnreachable,
-        isNetworkDown ? 'Check your internet and try again.' : "Can't reach the server.",
+        isNetworkDown ? tr('Check your internet and try again.') : tr("Can't reach the server."),
       );
     } catch (e) {
-      return AuthResult.failure(AuthOutcome.unknown, 'Something went wrong. Try again.');
+      return AuthResult.failure(AuthOutcome.unknown, tr('Something went wrong. Try again.'));
     }
   }
 

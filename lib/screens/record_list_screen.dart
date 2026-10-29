@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../app_navigation.dart';
+import '../l10n.dart';
 import '../odoo/domain.dart';
 import '../odoo/expr.dart';
 import '../odoo/format.dart';
@@ -109,7 +110,7 @@ class _RecordListScreenState extends State<RecordListScreen> {
         [widget.viewIds['search'] ?? false, 'search'],
       ], context: widget.recordContext);
       final cardArch = views.archs[cardType];
-      if (cardArch == null) throw const OdooException('This model has no list view.');
+      if (cardArch == null) throw OdooException(tr('This model has no list view.'));
 
       final env = {
         ...widget.rpc.evalEnv,
@@ -291,7 +292,7 @@ class _RecordListScreenState extends State<RecordListScreen> {
           recordId: id,
           formViewId: widget.viewIds['form'],
           recordContext: widget.recordContext,
-          title: id == null ? 'New' : widget.title,
+          title: id == null ? tr('New') : widget.title,
         ),
       ),
     );
@@ -315,7 +316,7 @@ class _RecordListScreenState extends State<RecordListScreen> {
         children: [
           for (final (f, _) in _filters)
             Padding(
-              padding: const EdgeInsets.only(right: 8),
+              padding: const EdgeInsetsDirectional.only(end: 8),
               child: Material(
                 color: _activeFilters.contains(f.name) ? scheme.primary : c.card,
                 shape: StadiumBorder(
@@ -373,13 +374,13 @@ class _RecordListScreenState extends State<RecordListScreen> {
     final today = DateTime(now.year, now.month, now.day);
     final day = DateTime(d.year, d.month, d.day);
     final diff = today.difference(day).inDays;
-    if (diff == 0) return 'Today';
-    if (diff == 1) return 'Yesterday';
-    if (diff == -1) return 'Tomorrow';
-    if (diff > 1 && diff < 7) return 'This week';
-    if (diff < 0 && diff > -7) return 'Next 7 days';
-    if (d.year == now.year && d.month == now.month) return 'This month';
-    return '${const ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'][d.month - 1]} ${d.year}';
+    if (diff == 0) return tr('Today');
+    if (diff == 1) return tr('Yesterday');
+    if (diff == -1) return tr('Tomorrow');
+    if (diff > 1 && diff < 7) return tr('This week');
+    if (diff < 0 && diff > -7) return tr('Next 7 days');
+    if (d.year == now.year && d.month == now.month) return tr('This month');
+    return '${monthName(d.month)} ${d.year}';
   }
 
   /// Section headings by date, only when the records are actually ordered
@@ -398,7 +399,7 @@ class _RecordListScreenState extends State<RecordListScreen> {
     return [
       for (final d in dates)
         () {
-          final b = d == null ? 'No date' : _bucket(d);
+          final b = d == null ? tr('No date') : _bucket(d);
           if (b == last) return null;
           last = b;
           return b;
@@ -533,10 +534,10 @@ class _RecordListScreenState extends State<RecordListScreen> {
           : (hasContact ? DismissDirection.startToEnd : DismissDirection.endToStart),
       // With a single direction Flutter only shows [background].
       background: hasContact
-          ? _swipeBackground(Icons.call_outlined, 'Contact', scheme.primary, Alignment.centerLeft)
-          : _swipeBackground(Icons.archive_outlined, 'Archive', scheme.error, Alignment.centerRight),
+          ? _swipeBackground(Icons.call_outlined, tr('Contact'), scheme.primary, AlignmentDirectional.centerStart)
+          : _swipeBackground(Icons.archive_outlined, tr('Archive'), scheme.error, AlignmentDirectional.centerEnd),
       secondaryBackground: hasContact && _canArchive
-          ? _swipeBackground(Icons.archive_outlined, 'Archive', scheme.error, Alignment.centerRight)
+          ? _swipeBackground(Icons.archive_outlined, tr('Archive'), scheme.error, AlignmentDirectional.centerEnd)
           : null,
       confirmDismiss: (direction) async {
         HapticFeedback.mediumImpact();
@@ -555,7 +556,7 @@ class _RecordListScreenState extends State<RecordListScreen> {
     );
   }
 
-  Widget _swipeBackground(IconData icon, String label, Color color, Alignment alignment) {
+  Widget _swipeBackground(IconData icon, String label, Color color, AlignmentGeometry alignment) {
     return Container(
       margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 5),
       padding: const EdgeInsets.symmetric(horizontal: 24),
@@ -601,9 +602,9 @@ class _RecordListScreenState extends State<RecordListScreen> {
     });
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
-        content: Text('Archived ${record['display_name'] ?? ''}'),
+        content: Text(tr('Archived {name}', {'name': record['display_name'] ?? ''})),
         action: SnackBarAction(
-          label: 'Undo',
+          label: tr('Undo'),
           onPressed: () async {
             try {
               await widget.rpc.callKw(
@@ -634,13 +635,13 @@ class _RecordListScreenState extends State<RecordListScreen> {
         Icon(Icons.inbox_outlined, size: 56, color: c.border),
         const SizedBox(height: 12),
         Text(
-          filtered ? 'No records match' : 'No records yet',
+          filtered ? tr('No records match') : tr('No records yet'),
           textAlign: TextAlign.center,
           style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
         ),
         const SizedBox(height: 4),
         Text(
-          filtered ? 'Try another search or filter.' : (_canCreate ? 'Tap New to create one.' : ''),
+          filtered ? tr('Try another search or filter.') : (_canCreate ? tr('Tap New to create one.') : ''),
           textAlign: TextAlign.center,
           style: TextStyle(color: c.muted),
         ),
@@ -664,12 +665,12 @@ class _RecordListScreenState extends State<RecordListScreen> {
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             Padding(
-              padding: const EdgeInsets.fromLTRB(4, 6, 8, 6),
+              padding: const EdgeInsetsDirectional.fromSTEB(4, 6, 8, 6),
               child: Row(
                 children: [
                   Builder(
                     builder: (ctx) => IconButton(
-                      tooltip: hasDrawer ? 'Menu' : 'Back',
+                      tooltip: hasDrawer ? tr('Menu') : tr('Back'),
                       icon: Icon(hasDrawer ? Icons.menu : Icons.arrow_back),
                       onPressed: () => hasDrawer ? Scaffold.of(ctx).openDrawer() : Navigator.of(ctx).maybePop(),
                     ),
@@ -692,7 +693,7 @@ class _RecordListScreenState extends State<RecordListScreen> {
                   ),
                   if (webPath != null)
                     IconButton(
-                      tooltip: 'Open in web',
+                      tooltip: tr('Open in web'),
                       icon: const Icon(Icons.open_in_browser),
                       onPressed: () => Navigator.of(context).push(
                         MaterialPageRoute(
@@ -709,7 +710,7 @@ class _RecordListScreenState extends State<RecordListScreen> {
               child: TextField(
                 decoration: InputDecoration(
                   prefixIcon: const Icon(Icons.search),
-                  hintText: 'Search ${widget.title.toLowerCase()}',
+                  hintText: tr('Search {name}', {'name': isArabic ? widget.title : widget.title.toLowerCase()}),
                   isDense: true,
                   fillColor: c.ground,
                   border: OutlineInputBorder(borderRadius: BorderRadius.circular(24), borderSide: BorderSide.none),
@@ -759,7 +760,7 @@ class _RecordListScreenState extends State<RecordListScreen> {
             padding: const EdgeInsets.all(10),
             decoration: BoxDecoration(color: scheme.tertiaryContainer, borderRadius: BorderRadius.circular(12)),
             child: Text(
-              "Part of this menu's filter can't be applied in the app, so it may show more records than the web version.",
+              tr("Part of this menu's filter can't be applied in the app, so it may show more records than the web version."),
               style: TextStyle(fontSize: 12, color: scheme.onTertiaryContainer),
             ),
           ),
@@ -770,9 +771,9 @@ class _RecordListScreenState extends State<RecordListScreen> {
               TextSpan(
                 style: TextStyle(fontSize: 13, color: c.muted),
                 children: [
-                  TextSpan(text: _total == 1 ? '1 record' : '${formatNumber(_total!, decimals: 0)} records'),
+                  TextSpan(text: _total == 1 ? tr('1 record') : tr('{n} records', {'n': formatNumber(_total!, decimals: 0)})),
                   if (_sum != null && _total! > 0) ...[
-                    const TextSpan(text: ' · total '),
+                    TextSpan(text: ' · ${tr('total')} '),
                     TextSpan(
                       text: formatNumber(_sum!),
                       style: TextStyle(color: c.ink, fontWeight: FontWeight.w700),
@@ -834,7 +835,7 @@ class _RecordListScreenState extends State<RecordListScreen> {
           ? FloatingActionButton.extended(
               onPressed: () => _openRecord(null),
               icon: const Icon(Icons.add),
-              label: const Text('New'),
+              label: Text(tr('New')),
             )
           : null,
       body: Column(

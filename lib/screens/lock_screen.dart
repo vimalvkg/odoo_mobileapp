@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../app_navigation.dart';
 import '../biometric.dart';
+import '../l10n.dart';
 import '../odoo_client.dart';
 import '../session_store.dart';
 import '../theme.dart';
@@ -29,7 +30,7 @@ class _LockScreenState extends State<LockScreen> {
   }
 
   Future<void> _unlock() async {
-    final ok = await biometricUnlock('Unlock to continue');
+    final ok = await biometricUnlock(tr('Unlock to continue'));
     if (!mounted) return;
     if (ok) {
       Navigator.of(context).pushReplacement(MaterialPageRoute(builder: (_) => HomeScreen(session: widget.session)));
@@ -69,11 +70,11 @@ class _LockScreenState extends State<LockScreen> {
                 style: FilledButton.styleFrom(backgroundColor: Colors.white, foregroundColor: brand),
                 onPressed: _unlock,
                 icon: const Icon(Icons.fingerprint),
-                label: Text(_failed ? 'Try again' : 'Unlock'),
+                label: Text(_failed ? tr('Try again') : tr('Unlock')),
               ),
               TextButton(
                 onPressed: () => endSession(),
-                child: const Text('Sign in with password', style: TextStyle(color: Colors.white)),
+                child: Text(tr('Sign in with password'), style: TextStyle(color: Colors.white)),
               ),
               const SizedBox(height: 32),
             ],

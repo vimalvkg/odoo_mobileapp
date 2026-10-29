@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 
 import '../app_navigation.dart';
+import '../l10n.dart';
 import '../odoo/domain.dart';
 import '../odoo/rpc.dart';
 
@@ -110,7 +111,7 @@ class _Many2onePickerState extends State<_Many2onePicker> {
                     child: Text(widget.title, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600)),
                   ),
                   if (widget.allowClear)
-                    TextButton(onPressed: () => Navigator.of(context).pop(false), child: const Text('Clear')),
+                    TextButton(onPressed: () => Navigator.of(context).pop(false), child: Text(tr('Clear'))),
                 ],
               ),
             ),
@@ -118,7 +119,7 @@ class _Many2onePickerState extends State<_Many2onePicker> {
               padding: const EdgeInsets.symmetric(horizontal: 16),
               child: TextField(
                 autofocus: true,
-                decoration: const InputDecoration(prefixIcon: Icon(Icons.search), hintText: 'Search', isDense: true),
+                decoration: InputDecoration(prefixIcon: Icon(Icons.search), hintText: tr('Search'), isDense: true),
                 onChanged: (q) {
                   _debounce?.cancel();
                   _debounce = Timer(const Duration(milliseconds: 300), () => _search(q.trim()));
@@ -130,7 +131,7 @@ class _Many2onePickerState extends State<_Many2onePicker> {
               child: results == null
                   ? const Center(child: CircularProgressIndicator())
                   : results.isEmpty
-                      ? const Center(child: Text('No matches'))
+                      ? Center(child: Text(tr('No matches')))
                       : ListView.builder(
                           itemCount: results.length,
                           itemBuilder: (_, i) {

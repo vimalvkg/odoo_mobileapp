@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:webview_flutter/webview_flutter.dart';
 
+import 'l10n.dart';
 import 'odoo/rpc.dart';
 import 'odoo_client.dart';
 import 'screens/login_screen.dart';
@@ -39,7 +40,7 @@ Future<void> endSession({String? notice, Session? destroy}) async {
 }
 
 String errorMessage(Object error) =>
-    error is OdooException ? error.message : 'Something went wrong. Try again.';
+    error is OdooException ? error.message : tr('Something went wrong. Try again.');
 
 /// Shows an RPC failure as a snackbar, or signs out when it means the
 /// session ended. Returns true if the session ended.

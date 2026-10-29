@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+import 'l10n.dart';
+
 /// Field names Odoo modules commonly use for phone numbers and emails.
 const phoneFieldNames = {'phone', 'mobile', 'partner_phone', 'work_phone', 'mobile_phone', 'phone_mobile_search'};
 const emailFieldNames = {'email', 'email_from', 'work_email', 'partner_email', 'email_normalized'};
@@ -28,7 +30,7 @@ Future<void> _launch(BuildContext context, Uri uri) async {
     // No app for this scheme.
   }
   if (!ok && context.mounted) {
-    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('No app available to open this.')));
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(tr('No app available to open this.'))));
   }
 }
 
@@ -65,11 +67,11 @@ class ContactButtons extends StatelessWidget {
       mainAxisSize: MainAxisSize.min,
       children: switch (kind) {
         ContactKind.phone => [
-            button(Icons.call_outlined, 'Call', () => callPhone(context, value)),
-            button(Icons.chat_outlined, 'WhatsApp', () => whatsApp(context, value)),
+            button(Icons.call_outlined, tr('Call'), () => callPhone(context, value)),
+            button(Icons.chat_outlined, tr('WhatsApp'), () => whatsApp(context, value)),
           ],
-        ContactKind.email => [button(Icons.mail_outline, 'Email', () => sendEmail(context, value))],
-        ContactKind.url => [button(Icons.open_in_new, 'Open', () => openUrl(context, value))],
+        ContactKind.email => [button(Icons.mail_outline, tr('Email'), () => sendEmail(context, value))],
+        ContactKind.url => [button(Icons.open_in_new, tr('Open'), () => openUrl(context, value))],
       },
     );
   }
@@ -91,7 +93,7 @@ Future<void> showContactSheet(BuildContext context, {required String title, Stri
           if (phone != null) ...[
             ListTile(
               leading: const Icon(Icons.call_outlined),
-              title: const Text('Call'),
+              title: Text(tr('Call')),
               subtitle: Text(phone),
               onTap: () {
                 Navigator.of(sheet).pop();
@@ -100,7 +102,7 @@ Future<void> showContactSheet(BuildContext context, {required String title, Stri
             ),
             ListTile(
               leading: const Icon(Icons.chat_outlined),
-              title: const Text('WhatsApp'),
+              title: Text(tr('WhatsApp')),
               subtitle: Text(phone),
               onTap: () {
                 Navigator.of(sheet).pop();
@@ -111,7 +113,7 @@ Future<void> showContactSheet(BuildContext context, {required String title, Stri
           if (email != null)
             ListTile(
               leading: const Icon(Icons.mail_outline),
-              title: const Text('Email'),
+              title: Text(tr('Email')),
               subtitle: Text(email),
               onTap: () {
                 Navigator.of(sheet).pop();

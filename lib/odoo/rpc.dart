@@ -4,6 +4,7 @@ import 'dart:io';
 
 import 'package:http/http.dart' as http;
 
+import '../l10n.dart';
 import '../odoo_client.dart' show extractSessionId;
 import '../session_store.dart';
 import 'menus.dart';
@@ -79,11 +80,11 @@ class OdooRpc {
     try {
       response = await request.timeout(const Duration(seconds: 30));
     } on TimeoutException {
-      throw const OdooException("The server didn't respond. It may be down.", isNetwork: true);
+      throw OdooException(tr("The server didn't respond. It may be down."), isNetwork: true);
     } on SocketException {
-      throw const OdooException("Can't reach the server. Check your connection.", isNetwork: true);
+      throw OdooException(tr("Can't reach the server. Check your connection."), isNetwork: true);
     } on http.ClientException {
-      throw const OdooException("Can't reach the server. Check your connection.", isNetwork: true);
+      throw OdooException(tr("Can't reach the server. Check your connection."), isNetwork: true);
     }
     final rotated = extractSessionId(response.headers['set-cookie']);
     if (rotated != null && rotated != session.sessionId) {
@@ -91,7 +92,7 @@ class OdooRpc {
       unawaited(SessionStore.save(session));
     }
     if (response.statusCode != 200) {
-      throw OdooException('Server returned ${response.statusCode}.');
+      throw OdooException(tr('Server returned {code}.', {'code': response.statusCode}));
     }
     return response;
   }
@@ -100,7 +101,7 @@ class OdooRpc {
     try {
       return jsonDecode(utf8.decode(response.bodyBytes));
     } on FormatException {
-      throw const OdooException('Unexpected response from the server.');
+      throw OdooException(tr('Unexpected response from the server.'));
     }
   }
 
@@ -111,13 +112,13 @@ class OdooRpc {
       body: jsonEncode({'jsonrpc': '2.0', 'method': 'call', 'params': params}),
     ));
     final decoded = _decode(response);
-    if (decoded is! Map) throw const OdooException('Unexpected response from the server.');
+    if (decoded is! Map) throw OdooException(tr('Unexpected response from the server.'));
     final error = decoded['error'];
     if (error is Map) {
       final data = error['data'];
       final name = data is Map ? data['name']?.toString() : null;
       final message = data is Map ? data['message']?.toString() : null;
-      throw OdooException(message ?? error['message']?.toString() ?? 'Server error.', name: name);
+      throw OdooException(message ?? error['message']?.toString() ?? tr('Server error.'), name: name);
     }
     return decoded['result'];
   }
@@ -184,6 +185,25 @@ class OdooRpc {
     }
   }
 
+  /// Languages installed in the database, by their name in Odoo.
+  Future<List<({String code, String name})>> loadLanguages() async {
+    final rows = await searchRead('res.lang', fields: ['code', 'name'], order: 'name');
+    return [
+      for (final r in rows)
+        if (r['code'] is String) (code: r['code'] as String, name: r['name']?.toString() ?? r['code'] as String),
+    ];
+  }
+
+  /// Changes the user's own language preference, as "My Preferences" in the
+  /// web client does, so both show the same language.
+  Future<void> setUserLanguage(String code) async {
+    await callKw('res.users', 'write', args: [
+      [uid],
+      {'lang': code},
+    ]);
+    userContext['lang'] = code;
+  }
+
   /// The installed apps (top-level menus) visible to this user.
   Future<List<OdooMenu>> loadApps() async {
     dynamic raw;
@@ -206,7 +226,7 @@ class OdooRpc {
       'action_id': actionId,
       'context': {...userContext, ...?context},
     });
-    if (result is! Map) throw const OdooException('This menu has nothing to open.');
+    if (result is! Map) throw OdooException(tr('This menu has nothing to open.'));
     return Map<String, dynamic>.from(result);
   }
 
@@ -221,7 +241,7 @@ class OdooRpc {
       },
       context: context,
     );
-    if (result is! Map) throw const OdooException('Unexpected response from the server.');
+    if (result is! Map) throw OdooException(tr('Unexpected response from the server.'));
     final models = {
       for (final e in ((result['models'] as Map?) ?? {}).entries) e.key.toString(): _fieldDefs(e.value),
     };
@@ -247,7 +267,7 @@ class OdooRpc {
   }
 
   static List<Map<String, dynamic>> _rows(dynamic result) {
-    if (result is! List) throw const OdooException('Unexpected response from the server.');
+    if (result is! List) throw OdooException(tr('Unexpected response from the server.'));
     return [for (final r in result) if (r is Map) Map<String, dynamic>.from(r)];
   }
 

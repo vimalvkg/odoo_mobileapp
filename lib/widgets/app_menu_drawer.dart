@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../l10n.dart';
 import '../odoo/menus.dart';
 import '../odoo/rpc.dart';
 import '../screens/action_screen.dart';
@@ -28,14 +29,14 @@ class AppMenuDrawer extends StatelessWidget {
       for (final menu in menus) ...[
         if (menu.actionId != null)
           ListTile(
-            contentPadding: EdgeInsets.only(left: 16.0 + depth * 16, right: 16),
+            contentPadding: EdgeInsetsDirectional.only(start: 16.0 + depth * 16, end: 16),
             title: Text(menu.name),
             selected: menu.id == currentMenuId,
             onTap: () => _open(context, menu),
           )
         else if (menu.children.isNotEmpty)
           Padding(
-            padding: EdgeInsets.fromLTRB(16.0 + depth * 16, 16, 16, 4),
+            padding: EdgeInsetsDirectional.fromSTEB(16.0 + depth * 16, 16, 16, 4),
             child: Text(
               menu.name.toUpperCase(),
               style: theme.textTheme.labelSmall?.copyWith(color: theme.colorScheme.outline, letterSpacing: 0.8),
@@ -71,7 +72,7 @@ class AppMenuDrawer extends StatelessWidget {
             ),
             ListTile(
               leading: const Icon(Icons.apps),
-              title: const Text('All apps'),
+              title: Text(tr('All apps')),
               onTap: () => Navigator.of(context).popUntil((route) => route.isFirst),
             ),
             const Divider(),

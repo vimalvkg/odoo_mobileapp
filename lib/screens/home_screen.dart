@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../app_navigation.dart';
+import '../l10n.dart';
 import '../odoo/format.dart';
 import '../odoo/menus.dart';
 import '../odoo/rpc.dart';
@@ -68,6 +69,9 @@ class _HomeScreenState extends State<HomeScreen> {
   Future<void> _load() async {
     try {
       await _rpc.loadSessionInfo();
+      // Same language as the web client; Odoo sends menus and labels in it.
+      final lang = _rpc.userContext['lang'];
+      if (lang is String && lang != appLanguage.value) await setAppLanguage(lang);
       final apps = await _rpc.loadApps();
       final (recent, pinned) = await (AppPrefs.recentMenus(_server, _db), PinnedMenus.load(_server, _db)).both;
       if (!mounted) return;
@@ -146,7 +150,7 @@ class _HomeScreenState extends State<HomeScreen> {
   Future<void> _openMenu(OdooMenu app, OdooMenu menu) async {
     final target = menu.firstAction;
     if (target == null) {
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('${menu.name} has nothing to open.')));
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(tr('{name} has nothing to open.', {'name': menu.name}))));
       return;
     }
     HapticFeedback.selectionClick();
@@ -174,7 +178,7 @@ class _HomeScreenState extends State<HomeScreen> {
     if (!mounted) return;
     setState(() => _pinnedIds = pins);
     ScaffoldMessenger.of(context)
-        .showSnackBar(SnackBar(content: Text(pinned ? 'Pinned ${target.name} to Home' : 'Unpinned ${target.name}')));
+        .showSnackBar(SnackBar(content: Text(pinned ? tr('Pinned {name} to Home', {'name': target.name}) : tr('Unpinned {name}', {'name': target.name}))));
   }
 
   void _selectTab(_Tab tab) {
@@ -213,22 +217,22 @@ class _HomeScreenState extends State<HomeScreen> {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            const Padding(
+            Padding(
               padding: EdgeInsets.fromLTRB(20, 0, 20, 8),
-              child: Text('Create new', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700)),
+              child: Text(tr('Create new'), style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700)),
             ),
             if (targets.isEmpty)
               Padding(
                 padding: const EdgeInsets.fromLTRB(20, 4, 20, 24),
                 child: Text(
-                  'Open or pin a menu first (long-press an app) and it will appear here for quick creation.',
+                  tr('Open or pin a menu first (long-press an app) and it will appear here for quick creation.'),
                   style: TextStyle(color: c.muted),
                 ),
               ),
             for (final (app, menu) in targets)
               ListTile(
                 leading: AppIcon(app: app, serverUrl: _server, size: 40),
-                title: Text('New in ${menu.name}', style: const TextStyle(fontWeight: FontWeight.w600)),
+                title: Text(tr('New in {name}', {'name': menu.name}), style: const TextStyle(fontWeight: FontWeight.w600)),
                 subtitle: Text(app.name),
                 trailing: const Icon(Icons.add),
                 onTap: () async {
@@ -237,7 +241,7 @@ class _HomeScreenState extends State<HomeScreen> {
                     final ok = await openCreateForm(context, _rpc, menu.actionId!, menu.name);
                     if (!ok && mounted) {
                       ScaffoldMessenger.of(context)
-                          .showSnackBar(SnackBar(content: Text('${menu.name} can\'t create records here.')));
+                          .showSnackBar(SnackBar(content: Text(tr("{name} can't create records here.", {'name': menu.name}))));
                     }
                   } catch (e) {
                     if (mounted) handleRpcError(context, e);
@@ -255,9 +259,9 @@ class _HomeScreenState extends State<HomeScreen> {
 
   String get _greeting {
     final hour = DateTime.now().hour;
-    final part = hour < 12 ? 'Good morning' : (hour < 17 ? 'Good afternoon' : 'Good evening');
+    final part = hour < 12 ? tr('Good morning') : (hour < 17 ? tr('Good afternoon') : tr('Good evening'));
     final first = (_rpc.userName ?? '').split(' ').first;
-    return first.isEmpty ? part : '$part, $first';
+    return first.isEmpty ? part : tr('{greeting}, {name}', {'greeting': part, 'name': first});
   }
 
   int get _attention => _overdue + _dueToday + (_unread ?? 0);
@@ -301,7 +305,7 @@ class _HomeScreenState extends State<HomeScreen> {
         ),
         if (_discuss != null)
           IconButton(
-            tooltip: 'Notifications',
+            tooltip: tr('Notifications'),
             onPressed: () => _selectTab(_Tab.discuss),
             style: IconButton.styleFrom(
               backgroundColor: c.card,
@@ -315,7 +319,7 @@ class _HomeScreenState extends State<HomeScreen> {
           customBorder: const CircleBorder(),
           onTap: () => _selectTab(_Tab.profile),
           child: Semantics(
-            label: 'Profile',
+            label: tr('Profile'),
             button: true,
             child: RecordAvatar(
               rpc: _rpc,
@@ -384,7 +388,7 @@ class _HomeScreenState extends State<HomeScreen> {
         children: [
           for (final (app, menu) in menus)
             Padding(
-              padding: const EdgeInsets.only(right: 8),
+              padding: const EdgeInsetsDirectional.only(end: 8),
               child: Material(
                 color: c.card,
                 shape: StadiumBorder(side: BorderSide(color: c.border)),
@@ -393,7 +397,7 @@ class _HomeScreenState extends State<HomeScreen> {
                   onTap: () => _openMenu(app, menu),
                   onLongPress: () => _togglePin(menu),
                   child: Padding(
-                    padding: const EdgeInsets.fromLTRB(6, 6, 14, 6),
+                    padding: const EdgeInsetsDirectional.fromSTEB(6, 6, 14, 6),
                     child: Row(
                       children: [
                         AppIcon(app: app, serverUrl: _server, size: 30),
@@ -443,11 +447,11 @@ class _HomeScreenState extends State<HomeScreen> {
           if (path.toLowerCase().contains(q)) (app, menu, path),
     ];
     if (results.isEmpty) {
-      return const [
+      return [
         SliverToBoxAdapter(
           child: Padding(
             padding: EdgeInsets.all(32),
-            child: Center(child: Text('No apps or menus match')),
+            child: Center(child: Text(tr('No apps or menus match'))),
           ),
         ),
       ];
@@ -462,7 +466,7 @@ class _HomeScreenState extends State<HomeScreen> {
             title: Text(menu.name, style: const TextStyle(fontWeight: FontWeight.w600)),
             subtitle: Text(path, maxLines: 1, overflow: TextOverflow.ellipsis),
             trailing: IconButton(
-              tooltip: _pinnedIds.contains(menu.id) ? 'Unpin' : 'Pin to Home',
+              tooltip: _pinnedIds.contains(menu.id) ? tr('Unpin') : tr('Pin to Home'),
               icon: Icon(_pinnedIds.contains(menu.id) ? Icons.push_pin : Icons.push_pin_outlined),
               onPressed: () => _togglePin(menu),
             ),
@@ -487,8 +491,8 @@ class _HomeScreenState extends State<HomeScreen> {
       return Scaffold(
         body: ErrorView(
           icon: Icons.apps_outlined,
-          title: 'No apps',
-          message: 'This user has no apps installed or no access to any.',
+          title: tr('No apps'),
+          message: tr('This user has no apps installed or no access to any.'),
           onRetry: _retry,
         ),
       );
@@ -524,19 +528,19 @@ class _HomeScreenState extends State<HomeScreen> {
                       const SizedBox(height: 4),
                       Text(
                         !hasMail
-                            ? 'What would you like to work on?'
+                            ? tr('What would you like to work on?')
                             : attention == 0
-                            ? "You're all caught up"
+                            ? tr("You're all caught up")
                             : attention == 1
                             ? '1 thing needs your attention'
-                            : '$attention things need your attention',
+                            : tr('{n} things need your attention', {'n': attention}),
                         style: TextStyle(fontSize: 14, color: c.muted),
                       ),
                       const SizedBox(height: 16),
                       TextField(
                         decoration: InputDecoration(
                           prefixIcon: const Icon(Icons.search),
-                          hintText: 'Search apps and menus',
+                          hintText: tr('Search apps and menus'),
                           fillColor: c.card,
                           border: OutlineInputBorder(
                             borderRadius: BorderRadius.circular(28),
@@ -557,20 +561,20 @@ class _HomeScreenState extends State<HomeScreen> {
                             children: [
                               _counter(
                                 '$_overdue',
-                                'Overdue activities',
+                                tr('Overdue activities'),
                                 const Color(0xFFB3261E),
                                 () => _selectTab(_Tab.activities),
                               ),
                               const SizedBox(width: 10),
                               _counter(
                                 '$_dueToday',
-                                'Due today',
+                                tr('Due today'),
                                 const Color(0xFF9A5B00),
                                 () => _selectTab(_Tab.activities),
                               ),
                               if (_unread != null) ...[
                                 const SizedBox(width: 10),
-                                _counter('$_unread', 'Unread messages', scheme.primary, () => _selectTab(_Tab.discuss)),
+                                _counter('$_unread', tr('Unread messages'), scheme.primary, () => _selectTab(_Tab.discuss)),
                               ],
                             ],
                           ),
@@ -582,17 +586,17 @@ class _HomeScreenState extends State<HomeScreen> {
               ),
               if (_query.isEmpty) ...[
                 if (pinned.isNotEmpty) ...[
-                  SliverToBoxAdapter(child: _sectionTitle('Pinned')),
+                  SliverToBoxAdapter(child: _sectionTitle(tr('Pinned'))),
                   SliverToBoxAdapter(child: _menuChips(pinned)),
                 ],
                 if (recent.isNotEmpty) ...[
-                  SliverToBoxAdapter(child: _sectionTitle('Recent')),
+                  SliverToBoxAdapter(child: _sectionTitle(tr('Recent'))),
                   SliverToBoxAdapter(child: _menuChips(recent)),
                 ],
                 SliverToBoxAdapter(
                   child: _sectionTitle(
-                    'Apps',
-                    trailing: Text('Long-press to pin', style: TextStyle(fontSize: 12, color: c.muted)),
+                    tr('Apps'),
+                    trailing: Text(tr('Long-press to pin'), style: TextStyle(fontSize: 12, color: c.muted)),
                   ),
                 ),
                 SliverPadding(
@@ -695,9 +699,9 @@ class _HomeScreenState extends State<HomeScreen> {
           height: 66,
           child: Row(
             children: [
-              _navItem(_Tab.home, Icons.home_outlined, Icons.home, 'Home'),
+              _navItem(_Tab.home, Icons.home_outlined, Icons.home, tr('Home')),
               if (hasMail)
-                _navItem(_Tab.activities, Icons.task_alt, Icons.task_alt, 'Activities', badge: _overdue + _dueToday),
+                _navItem(_Tab.activities, Icons.task_alt, Icons.task_alt, tr('Activities'), badge: _overdue + _dueToday),
               Expanded(
                 child: Center(
                   child: Transform.translate(
@@ -713,15 +717,15 @@ class _HomeScreenState extends State<HomeScreen> {
                         child: SizedBox(
                           width: 56,
                           height: 56,
-                          child: Icon(Icons.add, color: scheme.onPrimary, size: 28, semanticLabel: 'Quick create'),
+                          child: Icon(Icons.add, color: scheme.onPrimary, size: 28, semanticLabel: tr('Quick create')),
                         ),
                       ),
                     ),
                   ),
                 ),
               ),
-              if (hasMail) _navItem(_Tab.discuss, Icons.chat_bubble_outline, Icons.chat_bubble, 'Discuss'),
-              _navItem(_Tab.profile, Icons.person_outline, Icons.person, 'Profile'),
+              if (hasMail) _navItem(_Tab.discuss, Icons.chat_bubble_outline, Icons.chat_bubble, tr('Discuss')),
+              _navItem(_Tab.profile, Icons.person_outline, Icons.person, tr('Profile')),
             ],
           ),
         ),

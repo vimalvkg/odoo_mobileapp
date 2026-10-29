@@ -5,6 +5,7 @@ import 'package:url_launcher/url_launcher.dart';
 import 'package:webview_flutter/webview_flutter.dart';
 
 import '../app_navigation.dart';
+import '../l10n.dart';
 import '../navigation_policy.dart';
 import '../session_store.dart';
 import '../widgets/error_view.dart';
@@ -125,7 +126,7 @@ class _WebViewScreenState extends State<WebViewScreen> {
     }
     if (!opened && mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('No app installed to open ${uri.scheme == 'https' ? uri.host : uri.scheme} links.')),
+        SnackBar(content: Text(tr('No app installed to open {name} links.', {'name': uri.scheme == 'https' ? uri.host : uri.scheme}))),
       );
     }
   }
@@ -154,7 +155,7 @@ class _WebViewScreenState extends State<WebViewScreen> {
         appBar: AppBar(
           title: Text(widget.title),
           actions: [
-            IconButton(icon: const Icon(Icons.refresh), tooltip: 'Reload', onPressed: _start),
+            IconButton(icon: const Icon(Icons.refresh), tooltip: tr('Reload'), onPressed: _start),
           ],
           bottom: _state == _ScreenState.ready && _progress < 100
               ? PreferredSize(
@@ -173,15 +174,15 @@ class _WebViewScreenState extends State<WebViewScreen> {
             if (_state == _ScreenState.noConnection)
               ErrorView(
                 icon: Icons.cloud_off,
-                title: 'No connection',
-                message: 'Check your internet and try again.',
+                title: tr('No connection'),
+                message: tr('Check your internet and try again.'),
                 onRetry: _start,
               ),
             if (_state == _ScreenState.serverUnreachable)
               ErrorView(
                 icon: Icons.dns_outlined,
-                title: "Can't reach ${_server.host}",
-                message: "The server didn't respond. It may be down.",
+                title: tr("Can't reach {host}", {'host': _server.host}),
+                message: tr("The server didn't respond. It may be down."),
                 onRetry: _start,
               ),
           ],

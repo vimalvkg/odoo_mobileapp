@@ -84,6 +84,7 @@ All data access goes through the same endpoints the Odoo web client uses, so **a
 | FR-30 | Edit one2many lines natively (e.g. order lines): line cards from the field's inline list view, add/edit in a line editor built from its inline form (or list columns) with `parent.*` conditions, swipe to remove; saved as Odoo x2many commands so the server computes prices, taxes and totals | Done |
 | FR-41 | Many2many tags editable (add/remove chips); record pickers respect the field's domain | Done |
 | FR-42 | Live onchange while editing lines (unit price, taxes, subtotal shown before saving) | Planned — today computed on Save |
+| FR-43 | Language follows the user's Odoo language (`res.users.lang`): Odoo data comes translated by the server, the app's own text in English or Arabic, right-to-left layout for Arabic (and other RTL languages). Profile → Language lists the languages installed in the database and saves the choice to the user's Odoo preferences; English/Arabic toggle on the sign-in screen | Done |
 | FR-31 | Native wizards (`target="new"` actions), kanban grouping, calendar | Planned — today via web client |
 | FR-32 | Push notifications (Discuss, activities) | Planned — needs server-side design |
 

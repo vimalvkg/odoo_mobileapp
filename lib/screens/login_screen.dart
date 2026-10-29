@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 
+import '../l10n.dart';
 import '../odoo_client.dart';
 import '../session_store.dart';
 import '../theme.dart';
@@ -86,14 +87,14 @@ class _LoginScreenState extends State<LoginScreen> {
   Future<void> _pickDatabase() async {
     final server = _serverCtrl.text.trim();
     if (server.isEmpty) {
-      setState(() => _errorText = 'Enter the server first.');
+      setState(() => _errorText = tr('Enter the server first.'));
       return;
     }
     setState(() => _errorText = null);
     final databases = await OdooClient.listDatabases(normalizeServerUrl(server));
     if (!mounted) return;
     if (databases == null || databases.isEmpty) {
-      setState(() => _errorText = "This server doesn't list its databases. Type the name.");
+      setState(() => _errorText = tr("This server doesn't list its databases. Type the name."));
       return;
     }
     if (databases.length == 1) {
@@ -122,7 +123,7 @@ class _LoginScreenState extends State<LoginScreen> {
     final password = _passwordCtrl.text;
 
     if (server.isEmpty || db.isEmpty || login.isEmpty || password.isEmpty) {
-      setState(() => _errorText = 'Fill in all fields.');
+      setState(() => _errorText = tr('Fill in all fields.'));
       return;
     }
 
@@ -146,9 +147,17 @@ class _LoginScreenState extends State<LoginScreen> {
 
     final session = Session(serverUrl: serverUrl, db: db, login: login, sessionId: result.sessionId!);
     await SessionStore.save(session);
+    await setAppLanguage(result.lang);
 
     if (!mounted) return;
     Navigator.of(context).pushReplacement(MaterialPageRoute(builder: (_) => HomeScreen(session: session)));
+  }
+
+  /// The app's own text before sign-in; once signed in, the user's Odoo
+  /// language takes over.
+  Future<void> _toggleLanguage() async {
+    await setAppLanguage(isArabic ? 'en_US' : 'ar_001');
+    if (mounted) setState(() {});
   }
 
   Widget _banner(IconData icon, String text, Color bg, Color fg) {
@@ -178,6 +187,7 @@ class _LoginScreenState extends State<LoginScreen> {
     TextInputType? keyboard,
     TextInputAction action = TextInputAction.next,
     Iterable<String>? autofill,
+    bool ltr = false,
     ValueChanged<String>? onSubmitted,
   }) {
     final c = AppColors.of(context);
@@ -193,6 +203,7 @@ class _LoginScreenState extends State<LoginScreen> {
           controller: controller,
           obscureText: obscure,
           keyboardType: keyboard,
+          textDirection: ltr ? TextDirection.ltr : null,
           textInputAction: action,
           autocorrect: false,
           autofillHints: autofill,
@@ -215,68 +226,82 @@ class _LoginScreenState extends State<LoginScreen> {
       backgroundColor: c.card,
       body: SafeArea(
         child: SingleChildScrollView(
-          padding: const EdgeInsets.fromLTRB(24, 40, 24, 24),
+          padding: const EdgeInsets.fromLTRB(24, 8, 24, 24),
           child: AutofillGroup(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
+                Align(
+                  alignment: AlignmentDirectional.centerEnd,
+                  child: TextButton.icon(
+                    onPressed: _loading ? null : _toggleLanguage,
+                    icon: const Icon(Icons.translate, size: 18),
+                    // Each language is named in itself, so it's findable from the other.
+                    label: Text(isArabic ? 'English' : 'العربية'),
+                  ),
+                ),
+                const SizedBox(height: 8),
                 Center(child: BrandMark(size: 64, onBrand: false, logoUrl: _logoUrl)),
                 const SizedBox(height: 18),
                 Text(
-                  'Welcome back',
+                  tr('Welcome back'),
                   textAlign: TextAlign.center,
                   style: TextStyle(fontSize: 26, fontWeight: FontWeight.w800, letterSpacing: -0.4, color: c.ink),
                 ),
                 const SizedBox(height: 6),
                 Text(
-                  'Sign in to your Odoo database',
+                  tr('Sign in to your Odoo database'),
                   textAlign: TextAlign.center,
                   style: TextStyle(fontSize: 14, color: c.muted),
                 ),
                 const SizedBox(height: 28),
                 if (widget.notice != null) ...[
-                  _banner(Icons.info_outline, widget.notice!, scheme.secondaryContainer, scheme.onSecondaryContainer),
+                  _banner(Icons.info_outline, tr(widget.notice!), scheme.secondaryContainer, scheme.onSecondaryContainer),
                   const SizedBox(height: 16),
                 ],
                 _field(
-                  'Server',
+                  tr('Server'),
                   _serverCtrl,
                   Icons.dns_outlined,
                   hint: 'erp.yourcompany.com',
                   keyboard: TextInputType.url,
+                  ltr: true,
                 ),
                 const SizedBox(height: 14),
                 _field(
-                  'Database',
+                  tr('Database'),
                   _dbCtrl,
                   Icons.storage_outlined,
+                  ltr: true,
                   suffix: IconButton(
                     icon: const Icon(Icons.expand_more),
-                    tooltip: 'Choose from server',
+                    tooltip: tr('Choose from server'),
                     onPressed: _loading ? null : _pickDatabase,
                   ),
                 ),
                 const SizedBox(height: 14),
                 _field(
-                  'Email or username',
+                  tr('Email or username'),
                   _loginCtrl,
                   Icons.person_outline,
                   hint: 'you@company.com',
                   keyboard: TextInputType.emailAddress,
+                  ltr: true,
                   autofill: const [AutofillHints.username],
                 ),
                 const SizedBox(height: 14),
                 _field(
-                  'Password',
+                  tr('Password'),
                   _passwordCtrl,
                   Icons.lock_outline,
                   obscure: _obscurePassword,
                   action: TextInputAction.done,
+                  ltr: true,
                   autofill: const [AutofillHints.password],
                   onSubmitted: (_) => _submit(),
                   suffix: IconButton(
                     icon: Icon(_obscurePassword ? Icons.visibility_outlined : Icons.visibility_off_outlined),
-                    tooltip: _obscurePassword ? 'Show password' : 'Hide password',
+                    tooltip: _obscurePassword ? tr('Show password') : tr('Hide password'),
                     onPressed: () => setState(() => _obscurePassword = !_obscurePassword),
                   ),
                 ),
@@ -299,11 +324,11 @@ class _LoginScreenState extends State<LoginScreen> {
                           height: 20,
                           child: CircularProgressIndicator(strokeWidth: 2, color: scheme.onPrimary),
                         )
-                      : const Text('Sign in'),
+                      : Text(tr('Sign in')),
                 ),
                 const SizedBox(height: 28),
                 Text(
-                  'Works with any Odoo 19 Community database',
+                  tr('Works with any Odoo 19 Community database'),
                   textAlign: TextAlign.center,
                   style: TextStyle(fontSize: 12, color: c.muted),
                 ),

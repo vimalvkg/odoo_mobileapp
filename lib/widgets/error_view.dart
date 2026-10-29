@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../l10n.dart';
 import '../odoo/rpc.dart';
 
 class ErrorView extends StatelessWidget {
@@ -21,8 +22,8 @@ class ErrorView extends StatelessWidget {
     return ErrorView(
       key: key,
       icon: network ? Icons.cloud_off : Icons.error_outline,
-      title: network ? 'Connection problem' : "Couldn't load this page",
-      message: error is OdooException ? error.message : 'Something went wrong. Try again.',
+      title: network ? tr('Connection problem') : tr("Couldn't load this page"),
+      message: error is OdooException ? error.message : tr('Something went wrong. Try again.'),
       onRetry: onRetry,
     );
   }
@@ -49,7 +50,7 @@ class ErrorView extends StatelessWidget {
               textAlign: TextAlign.center,
             ),
             const SizedBox(height: 16),
-            FilledButton(onPressed: onRetry, child: const Text('Retry')),
+            FilledButton(onPressed: onRetry, child: Text(tr('Retry'))),
           ],
         ),
       ),
